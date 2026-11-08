@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "collabboard-x-backend"
+version = "1.0.0"
+description = "CollabBoard X - LAN Multi-user Collaborative Whiteboard & Communication Platform"
+authors = [{ name = "CollabBoard X Team" }]
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.9.0",
+    "aiosqlite>=0.20.0",
+    "websockets>=13.0"
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::DeprecationWarning"
+]
