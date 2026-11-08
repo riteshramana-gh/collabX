@@ -3,21 +3,61 @@
  * Matches backend MessageEnvelope and CanvasElement schemas.
  */
 
-export type ElementType = 'PENCIL' | 'RECTANGLE' | 'ELLIPSE' | 'LINE' | 'ARROW' | 'TEXT';
+export type ElementType =
+  | 'PENCIL'
+  | 'HIGHLIGHTER'
+  | 'RECTANGLE'
+  | 'ELLIPSE'
+  | 'LINE'
+  | 'ARROW'
+  | 'DOUBLE_ARROW'
+  | 'TRIANGLE'
+  | 'POLYGON'
+  | 'STAR'
+  | 'TEXT'
+  | 'IMAGE'
+  | 'STICKER';
+
+export type PenStyle = 'ballpoint' | 'fountain' | 'brush';
+
+export type PageTemplate = 'BLANK' | 'RULED' | 'GRID' | 'DOTTED' | 'PDF';
+
+export interface NotebookPage {
+  id: string;
+  index: number;
+  title: string;
+  template: PageTemplate;
+  background_color: string;
+  pdf_background_url?: string;
+  is_bookmarked?: boolean;
+}
 
 export interface CanvasElement {
   id: string;
+  page_id: string;
   type: ElementType;
-  x: float;
-  y: float;
+  x: number;
+  y: number;
   width?: number;
   height?: number;
+  rotation?: number; // In radians
   stroke_color: string;
   fill_color?: string;
   stroke_width: number;
-  points?: [number, number][]; // [[x, y], ...] for pencil
+  opacity?: number; // 0.0 to 1.0 (default 1.0, 0.35 for highlighters)
+  pen_style?: PenStyle; // 'ballpoint' | 'fountain' | 'brush'
+  points?: [number, number][]; // [[x, y], ...]
+  points_pressure?: number[]; // Velocity/pressure metrics for fountain/brush
   text?: string;
+  font_family?: string;
   font_size?: number;
+  font_weight?: string;
+  font_style?: string;
+  text_decoration?: string;
+  text_align?: 'left' | 'center' | 'right';
+  image_src?: string; // Base64 data URL
+  polygon_sides?: number; // Vertices for triangle, polygon, star
+  is_locked?: boolean;
   z_index: number;
   version: number;
   created_by: string;
@@ -25,16 +65,23 @@ export interface CanvasElement {
   last_modified_at: number;
 }
 
-type float = number;
-
-export type CanvasOperationType = 'ADD' | 'UPDATE' | 'DELETE' | 'TRANSFORM' | 'CLEAR';
+export type CanvasOperationType =
+  | 'ADD'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'TRANSFORM'
+  | 'CLEAR'
+  | 'PAGE_CREATE'
+  | 'PAGE_UPDATE'
+  | 'PAGE_DELETE';
 
 export interface CanvasOperation {
   client_op_id: string;
   op_type: CanvasOperationType;
   element_id?: string;
   element?: CanvasElement;
-  patch?: Partial<CanvasElement>;
+  patch?: Partial<CanvasElement> & { force?: boolean };
+  page?: NotebookPage;
 }
 
 export interface MessageEnvelope<T = Record<string, any>> {
@@ -65,6 +112,7 @@ export interface CursorPosition {
   color: string;
   active_tool: string;
   timestamp: number;
+  laser_points?: [number, number, number][]; // [x, y, timestamp]
 }
 
 export interface ChatMessage {

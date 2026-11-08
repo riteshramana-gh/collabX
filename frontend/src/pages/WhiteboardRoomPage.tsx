@@ -12,6 +12,10 @@ import { VoiceControls } from '../features/voice/components/VoiceControls';
 import { registerBuiltinRenderers } from '../features/canvas/renderers/builtinRenderers';
 import { registerBuiltinTools } from '../features/canvas/tools/builtinTools';
 import { Point } from '../features/canvas/registry/ToolRegistry';
+import { PageNavigationBar } from '../features/notebook/components/PageNavigationBar';
+import { PageThumbnailsDrawer } from '../features/notebook/components/PageThumbnailsDrawer';
+import { StickerDrawer } from '../features/elements/StickerDrawer';
+import { AudioRecorderBar } from '../features/audio/AudioRecorderBar';
 import { Wifi, WifiOff, ArrowLeft } from 'lucide-react';
 
 // Initialize registries once
@@ -35,6 +39,10 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
 
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('CONNECTING');
   const [, setViewportTick] = useState(0);
+
+  // GoodNotes Notebook Drawer States
+  const [isThumbnailsOpen, setIsThumbnailsOpen] = useState(false);
+  const [isStickersOpen, setIsStickersOpen] = useState(false);
 
   const conn = useMemo(() => {
     return new ConnectionManager(roomId, currentUserId);
@@ -72,6 +80,56 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
       conn.disconnect();
     };
   }, [conn, roomId, displayName]);
+
+  // Global Keyboard Shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+D, Delete, Ctrl+A, Escape)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is typing in an input, textarea or contenteditable element
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+      if (modKey && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          store.redo();
+        } else {
+          store.undo();
+        }
+      } else if (modKey && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        store.redo();
+      } else if (modKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        store.duplicateSelected();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        store.deleteSelected();
+      } else if (modKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        const activePageElements = Array.from(store.getElements().values())
+          .filter((el) => el.page_id === store.activePageId);
+        const selSet = new Set(activePageElements.map((el) => el.id));
+        store.setSelectedElementIds(selSet);
+        if (activePageElements.length > 0) {
+          store.setSelectedElementId(activePageElements[activePageElements.length - 1].id);
+        }
+      } else if (e.key === 'Escape') {
+        store.setSelectedElementId(null);
+        store.setSelectedElementIds(new Set());
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [store]);
 
   // Throttled cursor position broadcasting (every ~40ms)
   const handleCursorMove = (worldPoint: Point) => {
@@ -170,8 +228,13 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
         <HostPanel conn={conn} roomId={roomId} />
       </div>
 
-      {/* Floating Canvas Toolbar */}
-      <CanvasToolbar store={store} />
+      {/* Top Right: Synchronized Audio Recording Bar */}
+      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 40 }}>
+        <AudioRecorderBar store={store} />
+      </div>
+
+      {/* Floating GoodNotes Canvas Toolbar */}
+      <CanvasToolbar store={store} onToggleStickers={() => setIsStickersOpen((o) => !o)} />
 
       {/* Real-Time Remote Cursors Overlay */}
       <CursorOverlay conn={conn} panX={store.panX} panY={store.panY} zoom={store.zoom} />
@@ -182,7 +245,27 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
       {/* WebRTC Voice Group Audio Controls */}
       <VoiceControls voiceMesh={voiceMesh} />
 
-      {/* Infinite Canvas Viewport */}
+      {/* Bottom Page Navigation Bar */}
+      <PageNavigationBar
+        store={store}
+        onToggleThumbnails={() => setIsThumbnailsOpen((o) => !o)}
+      />
+
+      {/* Multi-Page Thumbnails Drawer */}
+      <PageThumbnailsDrawer
+        store={store}
+        isOpen={isThumbnailsOpen}
+        onClose={() => setIsThumbnailsOpen(false)}
+      />
+
+      {/* Sticker & Elements Drawer */}
+      <StickerDrawer
+        store={store}
+        isOpen={isStickersOpen}
+        onClose={() => setIsStickersOpen(false)}
+      />
+
+      {/* Infinite Canvas Viewport with Paper Templates & Precision Ruler */}
       <CanvasView store={store} onCursorMove={handleCursorMove} />
     </div>
   );

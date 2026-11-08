@@ -1,61 +1,91 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CanvasStore } from '../state/CanvasStore';
-import { ToolRegistry } from '../registry/ToolRegistry';
+import { PenStyle } from '../../../types/protocol';
 import {
   MousePointer,
   Pencil,
+  Highlighter,
+  Eraser,
+  Lasso,
   Square,
   Circle,
   Minus,
   ArrowUpRight,
+  Triangle,
   Type,
+  Zap,
+  Image as ImageIcon,
+  Sparkles,
+  Compass,
   RotateCcw,
   RotateCw,
   Trash2,
+  Copy,
+  Lock,
+  Unlock,
+  ChevronsUp,
+  ChevronsDown,
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Check,
+  ChevronDown,
 } from 'lucide-react';
 
 interface CanvasToolbarProps {
   store: CanvasStore;
+  onToggleStickers?: () => void;
 }
 
 const COLOR_PALETTE = [
+  '#000000', // Black
+  '#2563eb', // Royal Blue
+  '#dc2626', // Crimson Red
+  '#16a34a', // Emerald Green
+  '#d97706', // Amber
+  '#7c3aed', // Violet
+  '#db2777', // Pink
+  '#475569', // Slate
   '#ffffff', // White
-  '#94a3b8', // Slate
-  '#ef4444', // Red
-  '#f97316', // Orange
-  '#eab308', // Yellow
-  '#22c55e', // Green
-  '#06b6d4', // Cyan
-  '#3b82f6', // Blue
-  '#a855f7', // Purple
-  '#ec4899', // Pink
 ];
 
-const STROKE_WIDTHS = [2, 4, 8, 12];
+const STROKE_WIDTHS = [1, 2, 4, 8, 16];
 
-export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
+export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleStickers }) => {
   const [, setTick] = useState(0);
+  const [openMenu, setOpenMenu] = useState<'pen' | 'eraser' | 'shape' | 'text' | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     return store.subscribe(() => setTick((t) => t + 1));
   }, [store]);
 
-  const tools = ToolRegistry.getAll();
+  const activeTool = store.activeToolId;
+  const selectedId = store.selectedElementId;
+  const selectedElement = selectedId ? store.getElements().get(selectedId) : null;
 
-  const getToolIcon = (name: string) => {
-    switch (name) {
-      case 'MousePointer': return <MousePointer size={18} />;
-      case 'Pencil': return <Pencil size={18} />;
-      case 'Square': return <Square size={18} />;
-      case 'Circle': return <Circle size={18} />;
-      case 'Minus': return <Minus size={18} />;
-      case 'ArrowUpRight': return <ArrowUpRight size={18} />;
-      case 'Type': return <Type size={18} />;
-      default: return <Pencil size={18} />;
+  const handleToolSelect = (toolId: string) => {
+    store.activeToolId = toolId;
+    if (toolId !== 'select') {
+      store.setSelectedElementId(null);
     }
+    setOpenMenu(null);
+    setTick((v) => v + 1);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const src = event.target?.result as string;
+      if (src) {
+        store.insertImage(src, 360, 260);
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   return (
@@ -67,53 +97,247 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
         transform: 'translateX(-50%)',
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
-        background: 'rgba(30, 41, 59, 0.85)',
-        backdropFilter: 'blur(12px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: 12,
+        gap: 6,
+        background: 'rgba(30, 41, 59, 0.92)',
+        backdropFilter: 'blur(16px)',
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        borderRadius: 14,
         padding: '6px 12px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
         zIndex: 50,
       }}
     >
-      {/* Tool Selection Buttons */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        {tools.map((t) => {
-          const isActive = store.activeToolId === t.id;
-          return (
-            <button
-              key={t.id}
-              title={t.name}
-              onClick={() => {
-                store.activeToolId = t.id;
-                store.setSelectedElementId(null);
-                setTick((v) => v + 1);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 36,
-                height: 36,
-                borderRadius: 8,
-                border: 'none',
-                background: isActive ? '#3b82f6' : 'transparent',
-                color: isActive ? '#ffffff' : '#94a3b8',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {getToolIcon(t.iconName)}
-            </button>
-          );
-        })}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={handleImageUpload}
+      />
+
+      {/* 1. SELECT TOOL */}
+      <button
+        title="Select & Transform (V)"
+        onClick={() => handleToolSelect('select')}
+        style={getToolBtnStyle(activeTool === 'select')}
+      >
+        <MousePointer size={18} />
+      </button>
+
+      {/* 2. PEN TOOL (with Ballpoint / Fountain / Brush popup) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          title={`Pen (${store.penStyle})`}
+          onClick={() => {
+            if (activeTool === 'pencil') {
+              setOpenMenu(openMenu === 'pen' ? null : 'pen');
+            } else {
+              handleToolSelect('pencil');
+            }
+          }}
+          style={getToolBtnStyle(activeTool === 'pencil')}
+        >
+          <Pencil size={18} />
+          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+        </button>
+
+        {openMenu === 'pen' && (
+          <div style={popupMenuStyle}>
+            <div style={menuHeaderStyle}>Pen Style</div>
+            {(['ballpoint', 'fountain', 'brush'] as PenStyle[]).map((style) => (
+              <button
+                key={style}
+                onClick={() => {
+                  store.penStyle = style;
+                  setOpenMenu(null);
+                  setTick((v) => v + 1);
+                }}
+                style={menuItemStyle(store.penStyle === style)}
+              >
+                <span style={{ textTransform: 'capitalize' }}>{style} Pen</span>
+                {store.penStyle === style && <Check size={14} color="#3b82f6" />}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div style={{ width: 1, height: 24, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+      {/* 3. HIGHLIGHTER TOOL */}
+      <button
+        title="Highlighter (H)"
+        onClick={() => handleToolSelect('highlighter')}
+        style={getToolBtnStyle(activeTool === 'highlighter')}
+      >
+        <Highlighter size={18} />
+      </button>
 
-      {/* Color Picker Swatches */}
-      <div style={{ display: 'flex', gap: 4 }}>
+      {/* 4. ERASER TOOL (with Whole / Partial / Highlighter-Only popup) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          title={`Eraser (${store.eraserMode})`}
+          onClick={() => {
+            if (activeTool === 'eraser') {
+              setOpenMenu(openMenu === 'eraser' ? null : 'eraser');
+            } else {
+              handleToolSelect('eraser');
+            }
+          }}
+          style={getToolBtnStyle(activeTool === 'eraser')}
+        >
+          <Eraser size={18} />
+          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+        </button>
+
+        {openMenu === 'eraser' && (
+          <div style={popupMenuStyle}>
+            <div style={menuHeaderStyle}>Eraser Mode</div>
+            <button
+              onClick={() => {
+                store.eraserMode = 'whole';
+                setOpenMenu(null);
+                setTick((v) => v + 1);
+              }}
+              style={menuItemStyle(store.eraserMode === 'whole')}
+            >
+              <span>Whole Stroke</span>
+              {store.eraserMode === 'whole' && <Check size={14} color="#3b82f6" />}
+            </button>
+            <button
+              onClick={() => {
+                store.eraserMode = 'partial';
+                setOpenMenu(null);
+                setTick((v) => v + 1);
+              }}
+              style={menuItemStyle(store.eraserMode === 'partial')}
+            >
+              <span>Partial Stroke</span>
+              {store.eraserMode === 'partial' && <Check size={14} color="#3b82f6" />}
+            </button>
+            <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
+            <button
+              onClick={() => {
+                store.eraseHighlighterOnly = !store.eraseHighlighterOnly;
+                setTick((v) => v + 1);
+              }}
+              style={menuItemStyle(store.eraseHighlighterOnly)}
+            >
+              <span>Erase Highlighter Only</span>
+              {store.eraseHighlighterOnly && <Check size={14} color="#3b82f6" />}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 5. LASSO SELECTION TOOL */}
+      <button
+        title="Lasso Selection (L)"
+        onClick={() => handleToolSelect('lasso')}
+        style={getToolBtnStyle(activeTool === 'lasso')}
+      >
+        <Lasso size={18} />
+      </button>
+
+      {/* 6. SHAPES MENU (Rect, Ellipse, Line, Arrow, Triangle) */}
+      <div style={{ position: 'relative' }}>
+        <button
+          title="Geometric Shapes"
+          onClick={() => setOpenMenu(openMenu === 'shape' ? null : 'shape')}
+          style={getToolBtnStyle(['rectangle', 'ellipse', 'line', 'arrow', 'triangle'].includes(activeTool))}
+        >
+          {activeTool === 'circle' || activeTool === 'ellipse' ? (
+            <Circle size={18} />
+          ) : activeTool === 'line' ? (
+            <Minus size={18} />
+          ) : activeTool === 'arrow' ? (
+            <ArrowUpRight size={18} />
+          ) : activeTool === 'triangle' ? (
+            <Triangle size={18} />
+          ) : (
+            <Square size={18} />
+          )}
+          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+        </button>
+
+        {openMenu === 'shape' && (
+          <div style={popupMenuStyle}>
+            <div style={menuHeaderStyle}>Geometric Shapes</div>
+            <button onClick={() => handleToolSelect('rectangle')} style={menuItemStyle(activeTool === 'rectangle')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Square size={16} /> Rectangle</div>
+            </button>
+            <button onClick={() => handleToolSelect('ellipse')} style={menuItemStyle(activeTool === 'ellipse')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Circle size={16} /> Ellipse / Circle</div>
+            </button>
+            <button onClick={() => handleToolSelect('line')} style={menuItemStyle(activeTool === 'line')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Minus size={16} /> Straight Line</div>
+            </button>
+            <button onClick={() => handleToolSelect('arrow')} style={menuItemStyle(activeTool === 'arrow')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowUpRight size={16} /> Directional Arrow</div>
+            </button>
+            <button onClick={() => handleToolSelect('triangle')} style={menuItemStyle(activeTool === 'triangle')}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Triangle size={16} /> Triangle</div>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 7. TEXT TOOL */}
+      <button
+        title="Rich Text Box (T)"
+        onClick={() => handleToolSelect('text')}
+        style={getToolBtnStyle(activeTool === 'text')}
+      >
+        <Type size={18} />
+      </button>
+
+      {/* 8. LASER POINTER TOOL */}
+      <button
+        title="Laser Pointer (Presenter Trail)"
+        onClick={() => handleToolSelect('laser')}
+        style={getToolBtnStyle(activeTool === 'laser')}
+      >
+        <Zap size={18} />
+      </button>
+
+      {/* 9. IMAGE INSERTION */}
+      <button
+        title="Insert Image / Photo"
+        onClick={() => fileInputRef.current?.click()}
+        style={actionBtnStyle}
+      >
+        <ImageIcon size={18} />
+      </button>
+
+      {/* 10. STICKERS & ELEMENTS */}
+      {onToggleStickers && (
+        <button
+          title="Sticker & Formula Elements Drawer"
+          onClick={onToggleStickers}
+          style={{ ...actionBtnStyle, color: '#eab308' }}
+        >
+          <Sparkles size={18} />
+        </button>
+      )}
+
+      {/* 11. DRAFTING RULER TOGGLE */}
+      <button
+        title="Precision Drafting Ruler"
+        onClick={() => {
+          store.rulerActive = !store.rulerActive;
+          setTick((v) => v + 1);
+        }}
+        style={{
+          ...actionBtnStyle,
+          color: store.rulerActive ? '#3b82f6' : '#94a3b8',
+          background: store.rulerActive ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+        }}
+      >
+        <Compass size={18} />
+      </button>
+
+      <div style={separatorStyle} />
+
+      {/* COLOR PALETTE & CUSTOM COLOR */}
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
         {COLOR_PALETTE.map((c) => (
           <button
             key={c}
@@ -122,26 +346,46 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
               setTick((v) => v + 1);
             }}
             style={{
-              width: 20,
-              height: 20,
+              width: 18,
+              height: 18,
               borderRadius: '50%',
-              border: store.strokeColor === c ? '2px solid #ffffff' : '2px solid transparent',
+              border: store.strokeColor === c ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.2)',
               background: c,
               cursor: 'pointer',
               padding: 0,
-              boxShadow: store.strokeColor === c ? '0 0 6px rgba(255,255,255,0.6)' : 'none',
+              boxShadow: store.strokeColor === c ? '0 0 6px #38bdf8' : 'none',
             }}
           />
         ))}
+        {/* Native color picker for custom tones */}
+        <input
+          type="color"
+          value={store.strokeColor}
+          onChange={(e) => {
+            store.strokeColor = e.target.value;
+            setTick((v) => v + 1);
+          }}
+          title="Custom Ink Color"
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: '50%',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            padding: 0,
+          }}
+        />
       </div>
 
-      <div style={{ width: 1, height: 24, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+      <div style={separatorStyle} />
 
-      {/* Stroke Width Selector */}
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      {/* STROKE WIDTH SELECTOR */}
+      <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
         {STROKE_WIDTHS.map((w) => (
           <button
             key={w}
+            title={`${w}px width`}
             onClick={() => {
               store.strokeWidth = w;
               setTick((v) => v + 1);
@@ -150,8 +394,8 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: 28,
-              height: 28,
+              width: 24,
+              height: 24,
               borderRadius: 6,
               border: 'none',
               background: store.strokeWidth === w ? 'rgba(255, 255, 255, 0.2)' : 'transparent',
@@ -160,8 +404,8 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
           >
             <div
               style={{
-                width: Math.min(18, w * 2),
-                height: Math.min(18, w * 2),
+                width: Math.min(16, Math.max(3, w * 1.5)),
+                height: Math.min(16, Math.max(3, w * 1.5)),
                 borderRadius: '50%',
                 background: store.strokeColor,
               }}
@@ -170,39 +414,69 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
         ))}
       </div>
 
-      <div style={{ width: 1, height: 24, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+      <div style={separatorStyle} />
 
-      {/* Undo, Redo, Delete, Clear */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        <button
-          title="Undo (Ctrl+Z)"
-          onClick={() => store.undo()}
-          style={actionBtnStyle}
-        >
+      {/* UNDO & REDO */}
+      <div style={{ display: 'flex', gap: 2 }}>
+        <button title="Undo (Ctrl+Z)" onClick={() => store.undo()} style={actionBtnStyle}>
           <RotateCcw size={16} />
         </button>
-        <button
-          title="Redo (Ctrl+Y)"
-          onClick={() => store.redo()}
-          style={actionBtnStyle}
-        >
+        <button title="Redo (Ctrl+Y)" onClick={() => store.redo()} style={actionBtnStyle}>
           <RotateCw size={16} />
         </button>
-        {store.selectedElementId && (
-          <button
-            title="Delete Selected"
-            onClick={() => store.deleteSelected()}
-            style={{ ...actionBtnStyle, color: '#ef4444' }}
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
       </div>
 
-      <div style={{ width: 1, height: 24, background: 'rgba(255, 255, 255, 0.15)', margin: '0 4px' }} />
+      {/* QUICK SELECTION ACTIONS (Bring to front, Lock, Duplicate, Delete) */}
+      {selectedId && (
+        <>
+          <div style={separatorStyle} />
+          <div style={{ display: 'flex', gap: 2 }}>
+            <button
+              title="Bring to Front"
+              onClick={() => store.bringToFront()}
+              style={actionBtnStyle}
+            >
+              <ChevronsUp size={16} />
+            </button>
+            <button
+              title="Send to Back"
+              onClick={() => store.sendToBack()}
+              style={actionBtnStyle}
+            >
+              <ChevronsDown size={16} />
+            </button>
+            <button
+              title={selectedElement?.is_locked ? 'Unlock Object' : 'Lock Object'}
+              onClick={() => store.toggleLockSelected()}
+              style={{
+                ...actionBtnStyle,
+                color: selectedElement?.is_locked ? '#eab308' : '#94a3b8',
+              }}
+            >
+              {selectedElement?.is_locked ? <Lock size={16} /> : <Unlock size={16} />}
+            </button>
+            <button
+              title="Duplicate (Ctrl+D)"
+              onClick={() => store.duplicateSelected()}
+              style={actionBtnStyle}
+            >
+              <Copy size={16} />
+            </button>
+            <button
+              title="Delete (Del)"
+              onClick={() => store.deleteSelected()}
+              style={{ ...actionBtnStyle, color: '#ef4444' }}
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
+        </>
+      )}
 
-      {/* Zoom Controls */}
-      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <div style={separatorStyle} />
+
+      {/* ZOOM CONTROLS */}
+      <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
         <button
           title="Zoom Out"
           onClick={() => store.setZoom(store.zoom * 0.8)}
@@ -210,7 +484,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
         >
           <ZoomOut size={16} />
         </button>
-        <span style={{ fontSize: 12, color: '#94a3b8', minWidth: 38, textAlign: 'center' }}>
+        <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 34, textAlign: 'center' }}>
           {Math.round(store.zoom * 100)}%
         </span>
         <button
@@ -228,22 +502,82 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store }) => {
           }}
           style={actionBtnStyle}
         >
-          <Maximize2 size={16} />
+          <Maximize2 size={15} />
         </button>
       </div>
     </div>
   );
 };
 
+const getToolBtnStyle = (active: boolean): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 34,
+  height: 34,
+  borderRadius: 8,
+  border: 'none',
+  background: active ? '#3b82f6' : 'transparent',
+  color: active ? '#ffffff' : '#94a3b8',
+  cursor: 'pointer',
+  transition: 'all 0.15s ease',
+  padding: 0,
+});
+
 const actionBtnStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  width: 32,
-  height: 32,
+  width: 30,
+  height: 30,
   borderRadius: 6,
   border: 'none',
   background: 'transparent',
   color: '#94a3b8',
   cursor: 'pointer',
+  padding: 0,
 };
+
+const separatorStyle: React.CSSProperties = {
+  width: 1,
+  height: 22,
+  background: 'rgba(255, 255, 255, 0.15)',
+  margin: '0 3px',
+};
+
+const popupMenuStyle: React.CSSProperties = {
+  position: 'absolute',
+  top: '110%',
+  left: 0,
+  minWidth: 160,
+  background: 'rgba(15, 23, 42, 0.96)',
+  backdropFilter: 'blur(16px)',
+  border: '1px solid rgba(255, 255, 255, 0.15)',
+  borderRadius: 10,
+  padding: '6px 0',
+  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+  zIndex: 60,
+};
+
+const menuHeaderStyle: React.CSSProperties = {
+  padding: '4px 12px',
+  fontSize: 10,
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  color: '#64748b',
+  fontWeight: 700,
+};
+
+const menuItemStyle = (active: boolean): React.CSSProperties => ({
+  width: '100%',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: '6px 12px',
+  border: 'none',
+  background: active ? 'rgba(59, 130, 246, 0.15)' : 'transparent',
+  color: active ? '#60a5fa' : '#e2e8f0',
+  fontSize: 12,
+  cursor: 'pointer',
+  textAlign: 'left',
+});

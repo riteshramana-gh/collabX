@@ -171,13 +171,17 @@ class RoomActor:
             self._processed_op_ids.discard(evicted)
 
         # 5. Persist to storage repository
+        elem_id = op.element_id
+        if not elem_id and hasattr(mutated_elem, "id"):
+            elem_id = mutated_elem.id
+
         await self.canvas_repo.append_operation(
             room_id=self.room_id,
             seq=seq,
             client_op_id=client_op_id,
             sender_id=envelope.sender_id,
             op_type=op.op_type.value,
-            element_id=op.element_id or (mutated_elem.id if mutated_elem else None),
+            element_id=elem_id,
             payload=op.model_dump(),
         )
         await self.canvas_repo.update_room_seq(self.room_id, seq)
@@ -208,8 +212,9 @@ class RoomActor:
             payload={
                 "client_op_id": client_op_id,
                 "op_type": op.op_type.value,
-                "element_id": op.element_id or (mutated_elem.id if mutated_elem else None),
-                "element": mutated_elem.model_dump() if mutated_elem else None,
+                "element_id": elem_id,
+                "element": mutated_elem.model_dump() if hasattr(mutated_elem, "model_dump") and not hasattr(mutated_elem, "template") else None,
+                "page": mutated_elem.model_dump() if hasattr(mutated_elem, "template") else (op.page.model_dump() if op.page else None),
                 "patch": op.patch,
             },
         )

@@ -99,3 +99,65 @@ def test_canvas_delete_and_clear():
     success, removed = state.apply_operation(del_op, "user-1", 2000)
     assert success is True
     assert state.get_element("elem-3") is None
+
+
+def test_notebook_pages_and_locking():
+    from app.modules.canvas.models import NotebookPage, PageTemplate
+
+    state = AuthoritativeCanvasState("room-notebook-test")
+    # Verify default page exists
+    assert len(state.get_pages()) == 1
+    assert state.get_pages()[0].id == "page-1"
+
+    # 1. Create a second page
+    page2 = NotebookPage(id="page-2", index=1, title="Lecture Notes", template=PageTemplate.GRID)
+    create_op = CanvasOperation(
+        client_op_id="op-p2",
+        op_type=CanvasOperationType.PAGE_CREATE,
+        page=page2,
+    )
+    ok, res = state.apply_operation(create_op, "user-1", 1000)
+    assert ok is True
+    assert len(state.get_pages()) == 2
+
+    # 2. Add locked element on page 2
+    locked_elem = CanvasElement(
+        id="locked-1",
+        page_id="page-2",
+        type=ElementType.RECTANGLE,
+        x=10,
+        y=10,
+        is_locked=True,
+        created_by="user-1",
+        last_modified_by="user-1",
+        last_modified_at=1000,
+    )
+    ok, _ = state.apply_operation(
+        CanvasOperation(client_op_id="op-lock-elem", op_type=CanvasOperationType.ADD, element=locked_elem),
+        "user-1",
+        1000,
+    )
+    assert ok is True
+
+    # 3. Attempt to mutate locked element should be rejected
+    move_op = CanvasOperation(
+        client_op_id="op-move-locked",
+        op_type=CanvasOperationType.UPDATE,
+        element_id="locked-1",
+        patch={"x": 50},
+    )
+    ok, _ = state.apply_operation(move_op, "user-2", 2000)
+    assert ok is False
+    assert state.get_element("locked-1").x == 10  # Unchanged!
+
+    # 4. Delete page 2 cascades elements
+    del_page_op = CanvasOperation(
+        client_op_id="op-del-p2",
+        op_type=CanvasOperationType.PAGE_DELETE,
+        element_id="page-2",
+    )
+    ok, _ = state.apply_operation(del_page_op, "user-1", 3000)
+    assert ok is True
+    assert len(state.get_pages()) == 1
+    assert state.get_element("locked-1") is None  # Cascaded removal
+

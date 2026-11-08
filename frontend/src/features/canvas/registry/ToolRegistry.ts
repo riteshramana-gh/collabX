@@ -1,22 +1,40 @@
+import { CanvasElement, CanvasOperation, PenStyle } from '../../../types/protocol';
+
 export interface Point {
   x: number;
   y: number;
 }
 
 export interface CanvasToolContext {
-  elements: Map<string, any>;
+  elements: Map<string, CanvasElement>;
+  activePageId: string;
   activeStrokeColor: string;
   activeFillColor?: string;
   activeStrokeWidth: number;
   activeFontSize: number;
+  activePenStyle: PenStyle;
+  activeFontFamily: string;
+  activeFontWeight: string;
+  activeFontStyle: string;
+  activeTextAlign: 'left' | 'center' | 'right';
+  eraserMode: 'whole' | 'partial';
+  eraseHighlighterOnly: boolean;
+  shapeRecognitionEnabled: boolean;
   selectedElementId: string | null;
+  selectedElementIds: Set<string>;
   currentUserId: string;
-  commitOperation: (op: any) => void;
-  setPreviewElement: (element: any | null) => void;
+  commitOperation: (op: CanvasOperation) => void;
+  setPreviewElement: (element: CanvasElement | null) => void;
   setSelectedElementId: (id: string | null) => void;
+  setSelectedElementIds: (ids: Set<string>) => void;
   panX: number;
   panY: number;
   zoom: number;
+  rulerActive?: boolean;
+  rulerAngle?: number;
+  rulerX?: number;
+  rulerY?: number;
+  addLaserPoint?: (x: number, y: number) => void;
 }
 
 export interface CanvasTool {
