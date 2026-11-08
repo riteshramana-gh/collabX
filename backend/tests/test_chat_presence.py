@@ -58,7 +58,9 @@ async def test_chat_and_presence_flow(tmp_path: Path):
 
     # 1. Connect two peers in room "chat-room"
     alice = MockSession("sess-alice", "Alice")
+    alice.role = "HOST"
     bob = MockSession("sess-bob", "Bob")
+    bob.role = "EDITOR"
 
     await context.connection_manager.register_session(alice)
     await context.connection_manager.join_room(alice.session_id, "chat-room")
@@ -113,6 +115,27 @@ async def test_chat_and_presence_flow(tmp_path: Path):
     assert len(bob_cursor) == 1
     assert bob_cursor[0].payload["x"] == 150.5
     assert bob_cursor[0].payload["display_name"] == "Alice"
+
+    # 4.5 Bob requests cursor sharing permission
+    req_env = MessageEnvelope(
+        room_id="chat-room",
+        sender_id="sess-bob",
+        type="CURSOR_PERMISSION_REQ",
+    )
+    await context.event_bus.dispatch(bob, req_env)
+    alice_notifs = [m for m in alice.inbox if m.type == "CURSOR_PERMISSION_NOTIFICATION"]
+    assert len(alice_notifs) == 1
+    assert alice_notifs[0].payload["requester_session_id"] == "sess-bob"
+
+    # Alice grants permission to Bob
+    decision_env = MessageEnvelope(
+        room_id="chat-room",
+        sender_id="sess-alice",
+        type="CURSOR_PERMISSION_DECISION",
+        payload={"target_session_id": "sess-bob", "allowed": True},
+    )
+    await context.event_bus.dispatch(alice, decision_env)
+    assert "sess-bob" in presence_mod.allowed_cursor_sessions["chat-room"]
 
     # 5. Query active roster
     roster_env = MessageEnvelope(

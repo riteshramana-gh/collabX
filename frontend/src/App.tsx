@@ -8,20 +8,38 @@ export const App: React.FC = () => {
     return params.get('room');
   });
 
+  const [serverAddress, setServerAddress] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get('server') ||
+      localStorage.getItem('collabboard_server') ||
+      window.location.host ||
+      '127.0.0.1:8000'
+    );
+  });
+
   const [displayName, setDisplayName] = useState<string>(
     () => localStorage.getItem('collabboard_username') || 'Student'
   );
 
-  const handleJoin = (roomId: string, name: string) => {
+  const [isCreator, setIsCreator] = useState<boolean>(false);
+
+  const handleJoin = (roomId: string, name: string, server: string, creator: boolean = false) => {
     setDisplayName(name);
+    setServerAddress(server);
     setCurrentRoomId(roomId);
+    setIsCreator(creator);
     const url = new URL(window.location.href);
     url.searchParams.set('room', roomId);
+    if (server && server !== window.location.host) {
+      url.searchParams.set('server', server);
+    }
     window.history.pushState({}, '', url.toString());
   };
 
   const handleLeave = () => {
     setCurrentRoomId(null);
+    setIsCreator(false);
     const url = new URL(window.location.href);
     url.searchParams.delete('room');
     window.history.pushState({}, '', url.toString());
@@ -31,6 +49,7 @@ export const App: React.FC = () => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
       setCurrentRoomId(params.get('room'));
+      setIsCreator(false);
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -41,6 +60,8 @@ export const App: React.FC = () => {
       <WhiteboardRoomPage
         roomId={currentRoomId}
         displayName={displayName}
+        serverAddress={serverAddress}
+        isCreator={isCreator}
         onLeave={handleLeave}
       />
     );

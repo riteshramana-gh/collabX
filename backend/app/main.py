@@ -69,12 +69,6 @@ from fastapi.staticfiles import StaticFiles
 # Mount transports
 app.include_router(websocket_router)
 
-# Mount pre-built React frontend assets if present
-frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-if frontend_dist.is_dir():
-    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")
-
-
 
 @app.get("/api/health")
 async def health_check() -> Dict[str, Any]:
@@ -109,3 +103,26 @@ async def transport_info() -> Dict[str, Any]:
         },
         "registered_events": context.event_bus.get_registered_event_types(),
     }
+
+
+# Mount pre-built React frontend assets if present (must be mounted last to avoid shadowing /api and /ws)
+import sys
+
+frontend_dist = None
+if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+    meipass_dist = Path(sys._MEIPASS) / "frontend" / "dist"
+    if meipass_dist.is_dir():
+        frontend_dist = meipass_dist
+
+if frontend_dist is None:
+    source_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    if source_dist.is_dir():
+        frontend_dist = source_dist
+
+if frontend_dist is None:
+    exe_dist = Path(sys.executable).parent / "frontend" / "dist"
+    if exe_dist.is_dir():
+        frontend_dist = exe_dist
+
+if frontend_dist and frontend_dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(frontend_dist), html=True), name="static")

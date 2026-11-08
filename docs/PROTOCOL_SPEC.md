@@ -144,11 +144,11 @@ interface CanvasOperation {
 
 ### Room & Session Lifecycle
 - **`ROOM_JOIN_REQ`**: Request to join a room.
-  - Payload: `{ display_name: string, room_id: string }`
-- **`ROOM_JOIN_ACK`**: Join approval.
-  - Payload: `{ session_id: string, room_id: string, display_name: string, role: string }`
+  - Payload: `{ display_name: string, room_id: string, is_creator?: boolean }`
+- **`ROOM_JOIN_ACK`**: Join approval and role assignment.
+  - Payload: `{ session_id: string, room_id: string, display_name: string, role: "HOST" | "EDITOR" | "VIEWER", is_board_locked: boolean, host_session_id: string | null }`
 - **`ROOM_SNAPSHOT`**: Authoritative initial room state sent upon joining.
-  - Payload: `{ room_id: string, elements_count: number, elements: Record<string, CanvasElement>, pages: Record<string, NotebookPage>, current_seq: number }`
+  - Payload: `{ room_id: string, elements_count: number, elements: Record<string, CanvasElement>, pages: Record<string, NotebookPage>, current_seq: number, is_board_locked: boolean, host_session_id: string | null }`
 - **`PRESENCE_JOINED`**: Broadcast when a new participant connects.
   - Payload: `{ session_id: string, display_name: string, role: string }`
 - **`PRESENCE_LEFT`**: Broadcast when a participant leaves.
@@ -162,8 +162,8 @@ interface CanvasOperation {
   - Payload: `{ client_op_id: string, status: "ACCEPTED" | "DUPLICATE", server_seq: number }`
 - **`CANVAS_OP_BROADCAST`**: Authoritative state broadcast dispatched to all room participants.
   - Payload: `{ op_type: string, client_op_id: string, server_seq: number, element?: CanvasElement, element_id?: string, patch?: object, page?: NotebookPage }`
-- **`CANVAS_OP_REJECT`**: Sent when an operation fails validation or touches a locked element.
-  - Payload: `{ error: string, reason: string }`
+- **`CANVAS_OP_REJECT`**: Sent when an operation fails validation, touches a locked element, or is rejected due to room permissions.
+  - Payload: `{ error: "PERMISSION_DENIED" | "BOARD_ACCESS_DISABLED" | "VALIDATION_ERROR" | "ELEMENT_LOCKED", reason: string }`
 
 ### Sequence Gap Recovery
 - **`ROOM_REPLAY_REQ`**: Sent by client when an incoming `server_seq` has a gap from the expected sequence number.
@@ -171,11 +171,23 @@ interface CanvasOperation {
 - **`ROOM_REPLAY_RES`**: Server returns missing operations retrieved from SQLite WAL logs.
   - Payload: `{ from_seq: number, to_seq: number, operations: CanvasOperationRecord[] }`
 
-### Ephemeral Presence & Presentation
-- **`PRESENCE_CURSOR`**: Client mouse/pointer telemetry (throttled at ~40ms).
+### Ephemeral Presence & Host-Moderated Cursor Governance
+- **`PRESENCE_CURSOR`**: Client mouse/pointer telemetry (throttled at ~40ms). Rejected server-side if user is `VIEWER` or unauthorized.
   - Payload: `{ x: number, y: number, color: string, active_tool: string, laser_active?: boolean }`
-- **`PRESENCE_UPDATE`**: Broadcast of peer cursor positions to other participants.
-  - Payload: `{ session_id: string, display_name: string, x: number, y: number, color: string, active_tool: string }`
+- **`PRESENCE_UPDATE`**: Broadcast of peer cursor positions to other participants (Host cursor or approved participant cursors only).
+  - Payload: `{ session_id: string, display_name: string, is_host: boolean, x: number, y: number, color: string, active_tool: string, timestamp: number }`
+- **`CURSOR_PERMISSION_REQ`**: Non-host participant requests permission from the room Host to show their cursor.
+  - Payload: `{}`
+- **`CURSOR_PERMISSION_NOTIFICATION`**: Server routes incoming request to the room Host.
+  - Payload: `{ requester_session_id: string, display_name: string }`
+- **`CURSOR_PERMISSION_DECISION`**: Host approves or denies pointer sharing for a participant.
+  - Payload: `{ target_session_id: string, allowed: boolean }`
+- **`CURSOR_PERMISSION_RESULT`**: Server delivers Host's decision to requester.
+  - Payload: `{ allowed: boolean }`
+- **`CURSOR_PERMISSIONS_UPDATE`**: Server broadcasts the active set of allowed cursor session IDs to all peers.
+  - Payload: `{ allowed_session_ids: string[] }`
+- **`PRESENCE_CURSOR_REMOVE`**: Instructs room peers to immediately purge a removed or revoked cursor from screen.
+  - Payload: `{ session_id: string }`
 
 ### Real-Time Text Chat
 - **`CHAT_MSG_SEND`**: Client sends chat message.
@@ -194,10 +206,20 @@ interface CanvasOperation {
 - **`VOICE_STATE_UPDATE` / `VOICE_STATE_BROADCAST`**: Speaking / Mute / Deafen telemetry.
   - Payload: `{ is_muted: boolean, is_deafened: boolean, is_speaking: boolean }`
 
-### Host Administration Controls
-- **`HOST_LOCK_ROOM` / `HOST_ROOM_LOCKED`**: Restricts editing permissions.
+### Host Administration & Access Governance Controls
+- **`HOST_LOCK_ROOM` / `HOST_ROOM_LOCKED`**: Restricts editing permissions globally (Master Board Access toggle).
   - Payload: `{ is_locked: boolean }`
-- **`HOST_KICK_USER` / `HOST_USER_KICKED`**: Ejects specified session from room.
+- **`HOST_SET_USER_ROLE`**: Host alters an individual participant's permission level.
+  - Payload: `{ target_session_id: string, role: "HOST" | "EDITOR" | "VIEWER" }`
+- **`HOST_ROLE_UPDATED`**: Unicast notification to the target participant informing them of their new role.
+  - Payload: `{ role: "HOST" | "EDITOR" | "VIEWER" }`
+- **`PRESENCE_ROLE_CHANGED`**: Broadcast to all room peers announcing the role change.
+  - Payload: `{ target_session_id: string, role: string }`
+- **`HOST_MUTE_USER`**: Host mutes an individual participant or all room participants.
+  - Payload: `{ target_session_id: string | "all" }`
+- **`HOST_MUTED_BY_ADMIN`**: Notification sent to muted participant(s) triggering microphone silence.
+  - Payload: `{ target_session_id: string | "all" }`
+- **`HOST_KICK_USER` / `HOST_USER_KICKED`**: Ejects specified session from room with policy reason code.
   - Payload: `{ target_session_id: string, reason: string }`
 - **`HOST_EXPORT_SNAPSHOT` / `HOST_SNAPSHOT_EXPORTED`**: Export room snapshot JSON bundle.
 - **`HOST_RESTORE_SNAPSHOT`**: Restore room state from uploaded JSON bundle.

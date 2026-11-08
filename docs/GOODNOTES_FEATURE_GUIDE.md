@@ -23,6 +23,7 @@
 14. [Elements & Sticker Collections](#14-elements--sticker-collections)
 15. [Note-Synchronized Audio Recording](#15-note-synchronized-audio-recording)
 16. [Keyboard Shortcuts Quick Reference](#16-keyboard-shortcuts-quick-reference)
+17. [Workstation Organization, Permissions & Moderation](#17-workstation-organization-permissions--moderation)
 
 ---
 
@@ -225,3 +226,30 @@ Located at the top right of the room interface:
 | | `T` | Text tool |
 | **Navigation** | `Space + Drag` | Pan canvas viewport |
 | | `Mouse Wheel` | Smooth zoom in / out |
+
+---
+
+## 17. Workstation Organization, Permissions & Moderation
+
+CollabBoard X delivers an uncluttered, modern workstation layout designed for classrooms, engineering reviews, and multi-user brainstorms:
+
+### 17.1 Three Dedicated Workstation Tabs
+- **`🎨 Whiteboard & Notebook`**: Clean, edge-to-edge drawing viewport with the GoodNotes floating toolbar, bottom page navigation bar, and top-right audio recording bar. Canvas state and zoom level are continuously preserved in memory when switching tabs.
+- **`👥 Meeting & Controls`**: Dedicated full-page administration center with the Master Board Access card, participants permission matrix (`HOST`, `EDITOR`, `VIEWER`), individual pointer visibility toggles, voice muting controls, and snapshot backup tools.
+- **`💬 Chat`**: Spacious room discussion stream with participant avatars, timestamps, and header notification badges.
+
+### 17.2 Pixel-Exact Drawing Coordinates
+The canvas engine calculates drawing coordinates using `clientX - rect.left` and `clientY - rect.top` relative to the bounding box of the HTML `<canvas>` element. This guarantees that pen strokes, highlighters, shapes, and eraser paths match the physical cursor tip with zero offset or drift across any screen resolution and zoom level.
+
+### 17.3 Master Board Access Locking
+When a teacher, lecturer, or meeting leader needs everyone's attention:
+- The Host clicks **`[ 🔒 Board Access: Disabled ]`** in the top header.
+- All non-host participants immediately enter Read-Only mode with a warning banner (`"🔒 BOARD ACCESS DISABLED BY HOST"`).
+- Non-host drawing toolbars are hidden and pointer dragging switches smoothly to safe viewport panning.
+- The server authoritatively blocks any non-host mutation requests with `BOARD_ACCESS_DISABLED`.
+
+### 17.4 Clutter-Free Presentation & Host-Moderated Pointer Sharing
+In collaborative sessions with 10+ participants, broadcasting everyone's cursor clutters the board:
+- **Host Cursor (`👑 Host`)**: Always broadcast and highlighted with a golden crown badge.
+- **Viewer Suppression**: Users in `VIEWER` mode never broadcast pointers.
+- **Pointer Request**: Non-host editors can click **`[Share Pointer]`** in the top header. The Host receives an interactive header notification pill (`[Allow] / [Deny]`). Only approved pointers are visible to the room.

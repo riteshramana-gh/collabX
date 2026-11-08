@@ -99,7 +99,7 @@ export interface MessageEnvelope<T = Record<string, any>> {
 export interface RoomParticipant {
   session_id: string;
   display_name: string;
-  role: 'HOST' | 'PARTICIPANT';
+  role: 'HOST' | 'EDITOR' | 'VIEWER' | 'PARTICIPANT';
   is_muted?: boolean;
   is_speaking?: boolean;
 }

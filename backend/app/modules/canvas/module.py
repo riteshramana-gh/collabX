@@ -56,9 +56,25 @@ class CanvasFeatureModule(FeatureModule):
         """Handles a participant joining a room."""
         room_id = envelope.room_id
         display_name = envelope.payload.get("display_name", "Anonymous")
+        is_creator = envelope.payload.get("is_creator", False)
         session.display_name = display_name
 
         room_actor = await self.context.room_manager.get_or_create_room(room_id)
+        existing_sessions = await self.context.connection_manager.get_room_sessions(room_id)
+        other_sessions = [s for s in existing_sessions if s.session_id != session.session_id]
+
+        # First participant or explicit room creator becomes HOST; subsequent users join as EDITOR (or VIEWER if board is locked)
+        if room_actor.host_session_id is None or is_creator or len(other_sessions) == 0:
+            session.role = "HOST"
+            room_actor.host_session_id = session.session_id
+            logger.info(f"Designated HOST for room {room_id}: {session.session_id} ({display_name})")
+        else:
+            if room_actor.is_board_locked:
+                session.role = "VIEWER"
+            else:
+                session.role = "EDITOR"
+            logger.info(f"Participant joined room {room_id}: {session.session_id} ({display_name}) as {session.role}")
+
         await self.context.connection_manager.join_room(session.session_id, room_id)
 
         # 1. Send Join Acknowledgement
@@ -74,6 +90,8 @@ class CanvasFeatureModule(FeatureModule):
                     "room_id": room_id,
                     "display_name": display_name,
                     "role": session.role,
+                    "is_board_locked": room_actor.is_board_locked,
+                    "host_session_id": room_actor.host_session_id,
                 },
             )
         )

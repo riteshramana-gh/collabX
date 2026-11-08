@@ -35,6 +35,10 @@ class RoomActor:
         self.current_seq: int = 0
         self.ops_since_last_snapshot: int = 0
 
+        # Room Host & Board Access Governance
+        self.host_session_id: Optional[str] = None
+        self.is_board_locked: bool = False
+
         # In-memory deduplication sliding window
         self.dedup_window_size = dedup_window_size
         self._processed_op_ids: Set[str] = set()
@@ -121,6 +125,34 @@ class RoomActor:
                     type="CANVAS_OP_REJECT",
                     client_seq=envelope.client_seq,
                     payload={"error": "INVALID_PAYLOAD", "reason": str(e)},
+                )
+            )
+            return
+
+        # Check permissions: VIEWER role cannot modify canvas
+        if getattr(session, "role", "EDITOR") == "VIEWER":
+            logger.warning(f"[RoomActor {self.room_id}] Session {session.session_id} is VIEWER; rejecting canvas mutation")
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=self.room_id,
+                    sender_id="server",
+                    type="CANVAS_OP_REJECT",
+                    client_seq=envelope.client_seq,
+                    payload={"error": "PERMISSION_DENIED", "reason": "Viewer-only mode: Editing permission required"},
+                )
+            )
+            return
+
+        # Check Board Access: If host disabled board access, non-host cannot modify canvas
+        if self.is_board_locked and getattr(session, "role", "EDITOR") != "HOST":
+            logger.warning(f"[RoomActor {self.room_id}] Board access disabled by host; rejecting canvas mutation from {session.session_id}")
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=self.room_id,
+                    sender_id="server",
+                    type="CANVAS_OP_REJECT",
+                    client_seq=envelope.client_seq,
+                    payload={"error": "BOARD_ACCESS_DISABLED", "reason": "The Room Host has disabled editing access to this board."},
                 )
             )
             return
@@ -233,6 +265,8 @@ class RoomActor:
     async def get_initial_snapshot_envelope(self) -> MessageEnvelope:
         """Generates the initial full snapshot envelope for a joining client."""
         snapshot = self.canvas_state.get_snapshot()
+        snapshot["is_board_locked"] = self.is_board_locked
+        snapshot["host_session_id"] = self.host_session_id
         return MessageEnvelope(
             room_id=self.room_id,
             sender_id="server",

@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.spec
+build/
+dist/
+*.db
+*.db-shm
+*.db-wal
+
+# Node / Frontend
+node_modules/
+.npm/
+
+# Logs
+*.log

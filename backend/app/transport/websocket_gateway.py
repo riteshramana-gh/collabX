@@ -30,7 +30,7 @@ async def websocket_endpoint(
     client_port = websocket.client.port if websocket.client else 0
     remote_address = f"{client_host}:{client_port}"
 
-    session_id = f"ws-{uuid.uuid4().hex[:12]}"
+    session_id = client_id if client_id else f"ws-{uuid.uuid4().hex[:12]}"
     session = WebSocketSession(
         session_id=session_id,
         websocket=websocket,
@@ -41,8 +41,6 @@ async def websocket_endpoint(
         session.room_id = room_id
 
     await context.connection_manager.register_session(session)
-    if room_id:
-        await context.connection_manager.join_room(session_id, room_id)
 
     logger.info(f"[WebSocket] Connected: {session_id} from {remote_address} (Room: {room_id})")
 

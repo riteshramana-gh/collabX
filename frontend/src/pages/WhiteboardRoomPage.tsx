@@ -4,11 +4,9 @@ import { CanvasStore } from '../features/canvas/state/CanvasStore';
 import { CanvasView } from '../features/canvas/components/CanvasView';
 import { CanvasToolbar } from '../features/canvas/components/CanvasToolbar';
 import { CursorOverlay } from '../features/presence/components/CursorOverlay';
-import { ChatBox } from '../features/chat/components/ChatBox';
-import { ParticipantList } from '../features/presence/components/ParticipantList';
-import { HostPanel } from '../features/host/components/HostPanel';
+import { MeetingControlsTab } from '../features/meeting/components/MeetingControlsTab';
+import { ChatTab } from '../features/chat/components/ChatTab';
 import { WebRTCVoiceMesh } from '../features/voice/rtc/WebRTCVoiceMesh';
-import { VoiceControls } from '../features/voice/components/VoiceControls';
 import { registerBuiltinRenderers } from '../features/canvas/renderers/builtinRenderers';
 import { registerBuiltinTools } from '../features/canvas/tools/builtinTools';
 import { Point } from '../features/canvas/registry/ToolRegistry';
@@ -16,37 +14,88 @@ import { PageNavigationBar } from '../features/notebook/components/PageNavigatio
 import { PageThumbnailsDrawer } from '../features/notebook/components/PageThumbnailsDrawer';
 import { StickerDrawer } from '../features/elements/StickerDrawer';
 import { AudioRecorderBar } from '../features/audio/AudioRecorderBar';
-import { Wifi, WifiOff, ArrowLeft } from 'lucide-react';
+import { ShareRoomModal } from '../features/canvas/components/ShareRoomModal';
+import {
+  Wifi,
+  WifiOff,
+  ArrowLeft,
+  QrCode,
+  Eye,
+  Crown,
+  Edit3,
+  PenTool,
+  Users,
+  MessageSquare,
+  Mic,
+  MicOff,
+  Lock,
+  Unlock,
+  MousePointer2,
+} from 'lucide-react';
 
 // Initialize registries once
 registerBuiltinRenderers();
 registerBuiltinTools();
 
+export type TabType = 'whiteboard' | 'meeting' | 'chat';
+
 interface WhiteboardRoomPageProps {
   roomId: string;
   displayName: string;
+  serverAddress?: string;
+  isCreator?: boolean;
   onLeave: () => void;
 }
 
 export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
   roomId,
   displayName,
+  serverAddress = window.location.host || '127.0.0.1:8000',
+  isCreator = false,
   onLeave,
 }) => {
   const currentUserId = useMemo(() => {
     return 'user-' + (crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 8));
   }, []);
 
+  const [activeTab, setActiveTab] = useState<TabType>('whiteboard');
   const [connStatus, setConnStatus] = useState<ConnectionStatus>('CONNECTING');
   const [, setViewportTick] = useState(0);
+  const [, setVoiceTick] = useState(0);
 
-  // GoodNotes Notebook Drawer States
+  // Tab counters & state
+  const [participantCount, setParticipantCount] = useState<number>(1);
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+
+  // GoodNotes Notebook Drawer States & Share Modal
   const [isThumbnailsOpen, setIsThumbnailsOpen] = useState(false);
   const [isStickersOpen, setIsStickersOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  // Master Board Access & Role Governance
+  const [userRole, setUserRole] = useState<'HOST' | 'EDITOR' | 'VIEWER'>(isCreator ? 'HOST' : 'EDITOR');
+  const [isBoardLocked, setIsBoardLocked] = useState<boolean>(false);
+  const [hostSessionId, setHostSessionId] = useState<string | null>(null);
+
+  // Participant Cursor Sharing State & Host Moderation
+  const [allowedCursorSessionIds, setAllowedCursorSessionIds] = useState<Set<string>>(new Set());
+  const [cursorShareStatus, setCursorShareStatus] = useState<'OFF' | 'PENDING' | 'SHARING'>('OFF');
+  const [pendingCursorRequests, setPendingCursorRequests] = useState<
+    Array<{ requester_session_id: string; display_name: string }>
+  >([]);
+
+  const isHost = userRole === 'HOST';
+  const isAccessDisabled = userRole === 'VIEWER' || (isBoardLocked && !isHost);
+
+  const wsUrl = useMemo(() => {
+    const cleanHost = serverAddress.replace(/^https?:\/\//, '');
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${cleanHost}/ws/rooms/${roomId}?client_id=${currentUserId}`;
+  }, [serverAddress, roomId, currentUserId]);
 
   const conn = useMemo(() => {
-    return new ConnectionManager(roomId, currentUserId);
-  }, [roomId, currentUserId]);
+    return new ConnectionManager(roomId, currentUserId, wsUrl);
+  }, [roomId, currentUserId, wsUrl]);
 
   const store = useMemo(() => {
     return new CanvasStore(conn, currentUserId);
@@ -62,6 +111,11 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
     return store.subscribe(() => setViewportTick((t) => t + 1));
   }, [store]);
 
+  // Keep Voice UI synchronized on mic / mute changes
+  useEffect(() => {
+    voiceMesh.setStateChangeListener(() => setVoiceTick((t) => t + 1));
+  }, [voiceMesh]);
+
   useEffect(() => {
     conn.onStatusChange((status) => {
       setConnStatus(status);
@@ -69,22 +123,122 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
         conn.send('ROOM_JOIN_REQ', {
           display_name: displayName,
           room_id: roomId,
+          is_creator: isCreator,
         });
+        conn.send('PRESENCE_ROSTER_REQ', {});
+      }
+    });
+
+    const unsubAck = conn.on('ROOM_JOIN_ACK', (env) => {
+      if (env.payload?.role) setUserRole(env.payload.role);
+      if (env.payload?.is_board_locked !== undefined) {
+        setIsBoardLocked(Boolean(env.payload.is_board_locked));
+      }
+      if (env.payload?.host_session_id) {
+        setHostSessionId(env.payload.host_session_id);
+      }
+    });
+
+    const unsubRoleUpdated = conn.on('HOST_ROLE_UPDATED', (env) => {
+      if (env.payload?.role) {
+        setUserRole(env.payload.role);
+        if (env.payload.role === 'VIEWER') {
+          store.setSelectedElementId(null);
+          store.setSelectedElementIds(new Set());
+          setCursorShareStatus('OFF');
+        }
+      }
+    });
+
+    const unsubLock = conn.on('HOST_ROOM_LOCKED', (env) => {
+      setIsBoardLocked(Boolean(env.payload?.is_locked));
+    });
+
+    const unsubRoster = conn.on('PRESENCE_ROSTER_RES', (env) => {
+      const list = (env.payload?.participants || []) as Array<any>;
+      if (list.length > 0) {
+        setParticipantCount(list.length);
+        const hostUser = list.find((p) => p.role === 'HOST');
+        if (hostUser) setHostSessionId(hostUser.session_id);
+        const me = list.find((p) => p.session_id === currentUserId);
+        if (me && me.role) setUserRole(me.role);
+      }
+    });
+
+    const unsubCursorNotification = conn.on('CURSOR_PERMISSION_NOTIFICATION', (env) => {
+      const req = env.payload as { requester_session_id: string; display_name: string };
+      if (req?.requester_session_id) {
+        setPendingCursorRequests((prev) => {
+          if (prev.some((p) => p.requester_session_id === req.requester_session_id)) return prev;
+          return [...prev, req];
+        });
+      }
+    });
+
+    const unsubCursorResult = conn.on('CURSOR_PERMISSION_RESULT', (env) => {
+      const allowed = Boolean(env.payload?.allowed);
+      setCursorShareStatus(allowed ? 'SHARING' : 'OFF');
+    });
+
+    const unsubCursorUpdate = conn.on('CURSOR_PERMISSIONS_UPDATE', (env) => {
+      const ids = (env.payload?.allowed_session_ids || []) as string[];
+      setAllowedCursorSessionIds(new Set(ids));
+      if (!ids.includes(currentUserId) && !isHost) {
+        setCursorShareStatus('OFF');
+      }
+    });
+
+    const unsubJoined = conn.on('PRESENCE_JOINED', () => {
+      setParticipantCount((c) => c + 1);
+    });
+
+    const unsubLeft = conn.on('PRESENCE_LEFT', () => {
+      setParticipantCount((c) => Math.max(1, c - 1));
+    });
+
+    const unsubMuted = conn.on('HOST_MUTED_BY_ADMIN', (env) => {
+      const target = env.payload?.target_session_id;
+      if (target === 'all' || target === currentUserId) {
+        if (voiceMesh.isConnected && !voiceMesh.isMuted) {
+          voiceMesh.toggleMute();
+          alert('You have been muted by the Room Host.');
+        }
+      }
+    });
+
+    const unsubChat = conn.on('CHAT_MSG_BROADCAST', () => {
+      if (activeTab !== 'chat') {
+        setUnreadChatCount((c) => c + 1);
       }
     });
 
     conn.connect();
 
     return () => {
+      unsubAck();
+      unsubRoleUpdated();
+      unsubLock();
+      unsubRoster();
+      unsubCursorNotification();
+      unsubCursorResult();
+      unsubCursorUpdate();
+      unsubJoined();
+      unsubLeft();
+      unsubMuted();
+      unsubChat();
       voiceMesh.leaveVoice();
       conn.disconnect();
     };
-  }, [conn, roomId, displayName]);
+  }, [conn, roomId, displayName, voiceMesh, store, currentUserId, activeTab, isCreator, isHost]);
 
   // Global Keyboard Shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+D, Delete, Ctrl+A, Escape)
+  // Only active when drawing in Whiteboard tab and user has editing privileges
   useEffect(() => {
+    if (activeTab !== 'whiteboard') return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if user is typing in an input, textarea or contenteditable element
+      if (isAccessDisabled) return; // Prevent mutation shortcuts if board access disabled
+
       const target = e.target as HTMLElement;
       if (
         target.tagName === 'INPUT' ||
@@ -129,10 +283,14 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [store]);
+  }, [store, isAccessDisabled, activeTab]);
 
   // Throttled cursor position broadcasting (every ~40ms)
   const handleCursorMove = (worldPoint: Point) => {
+    if (activeTab !== 'whiteboard') return;
+    if (isAccessDisabled) return;
+    if (!isHost && cursorShareStatus !== 'SHARING') return;
+
     const now = Date.now();
     if (now - lastCursorSendRef.current > 40) {
       lastCursorSendRef.current = now;
@@ -145,128 +303,674 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
     }
   };
 
+  const handleCursorDecision = (requesterId: string, allowed: boolean) => {
+    conn.send('CURSOR_PERMISSION_DECISION', {
+      target_session_id: requesterId,
+      allowed,
+    });
+    setPendingCursorRequests((prev) => prev.filter((r) => r.requester_session_id !== requesterId));
+  };
+
+  const handleToggleCursorSharingForParticipant = (targetSessionId: string, allowed: boolean) => {
+    if (!isHost) return;
+    conn.send('CURSOR_PERMISSION_DECISION', {
+      target_session_id: targetSessionId,
+      allowed,
+    });
+  };
+
+  const handleToggleBoardAccess = () => {
+    if (!isHost) return;
+    conn.send('HOST_LOCK_ROOM', { is_locked: !isBoardLocked });
+  };
+
   const getStatusBadge = () => {
     switch (connStatus) {
       case 'CONNECTED':
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e', fontSize: 13, fontWeight: 500 }}>
-            <Wifi size={14} /> Connected
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e', fontSize: 12, fontWeight: 500 }}>
+            <Wifi size={13} /> Connected
           </div>
         );
       case 'RECONNECTING':
       case 'CONNECTING':
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#eab308', fontSize: 13, fontWeight: 500 }}>
-            <Wifi size={14} /> Reconnecting...
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#eab308', fontSize: 12, fontWeight: 500 }}>
+            <Wifi size={13} /> Reconnecting...
           </div>
         );
       case 'ERROR':
       case 'DISCONNECTED':
       default:
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontSize: 13, fontWeight: 500 }}>
-            <WifiOff size={14} /> Disconnected
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontSize: 12, fontWeight: 500 }}>
+            <WifiOff size={13} /> Disconnected
           </div>
         );
     }
   };
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#0f172a' }}>
-      {/* Top Header Bar */}
-      <div
+    <div
+      style={{
+        position: 'relative',
+        width: '100vw',
+        height: '100vh',
+        overflow: 'hidden',
+        background: '#0f172a',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      {/* =========================================================================
+          TOP UNIFIED NAVIGATION HEADER BAR (Height: 52px)
+          Houses Brand, Room info, Master Access Switch, Tab Switcher, Voice, Role
+         ========================================================================= */}
+      <header
         style={{
-          position: 'absolute',
-          top: 16,
-          left: 16,
+          height: 52,
+          minHeight: 52,
+          width: '100%',
+          background: 'rgba(15, 23, 42, 0.96)',
+          backdropFilter: 'blur(16px)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
           display: 'flex',
           alignItems: 'center',
-          gap: 12,
-          background: 'rgba(30, 41, 59, 0.85)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          borderRadius: 12,
-          padding: '8px 16px',
-          boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)',
-          zIndex: 40,
+          justifyContent: 'space-between',
+          padding: '0 20px',
+          boxSizing: 'border-box',
+          zIndex: 60,
+          boxShadow: '0 2px 12px rgba(0, 0, 0, 0.4)',
         }}
       >
-        <button
-          onClick={onLeave}
-          title="Back to Dashboard"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'transparent',
-            border: 'none',
-            color: '#94a3b8',
-            cursor: 'pointer',
-            padding: 4,
-          }}
-        >
-          <ArrowLeft size={18} />
-        </button>
+        {/* Left Section: Back, Brand, Room ID, Live Status */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            onClick={onLeave}
+            title="Back to Dashboard"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(255, 255, 255, 0.06)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 8,
+              color: '#94a3b8',
+              cursor: 'pointer',
+              padding: '6px 10px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <ArrowLeft size={16} />
+          </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255, 255, 255, 0.15)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 800, fontSize: 15, color: '#38bdf8', letterSpacing: '-0.3px' }}>
+              CollabBoard
+            </span>
+            <span
+              style={{
+                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                color: '#ffffff',
+                fontSize: 10,
+                fontWeight: 800,
+                padding: '2px 6px',
+                borderRadius: 4,
+              }}
+            >
+              X
+            </span>
+          </div>
 
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#f8fafc' }}>{roomId}</div>
-          <div style={{ fontSize: 12, color: '#94a3b8' }}>User: {displayName}</div>
+          <div style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+
+          <div style={{ fontSize: 13, color: '#cbd5e1' }}>
+            Room: <strong style={{ color: '#ffffff' }}>{roomId}</strong>
+          </div>
+
+          <div style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+
+          {getStatusBadge()}
         </div>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255, 255, 255, 0.15)' }} />
+        {/* Center Section: Main Workstation Tab Switcher & Master Access Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Host Master Board Access Switch */}
+          {isHost ? (
+            <button
+              onClick={handleToggleBoardAccess}
+              title={
+                isBoardLocked
+                  ? 'Board Access is Disabled for Participants. Click to Enable.'
+                  : 'Board Access is Open to Editors. Click to Freeze/Disable.'
+              }
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: isBoardLocked ? 'rgba(239, 68, 68, 0.25)' : 'rgba(34, 197, 94, 0.2)',
+                color: isBoardLocked ? '#f87171' : '#4ade80',
+                border: `1px solid ${isBoardLocked ? 'rgba(239, 68, 68, 0.5)' : 'rgba(34, 197, 94, 0.4)'}`,
+                borderRadius: 8,
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {isBoardLocked ? <Lock size={13} /> : <Unlock size={13} />}
+              <span>{isBoardLocked ? 'Board Access: Disabled' : 'Board Access: Open'}</span>
+            </button>
+          ) : isBoardLocked ? (
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(239, 68, 68, 0.2)',
+                color: '#f87171',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: 8,
+                padding: '5px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              <Lock size={12} />
+              <span>Read-Only</span>
+            </span>
+          ) : null}
 
-        {getStatusBadge()}
+          <nav
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'rgba(30, 41, 59, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              padding: 3,
+              borderRadius: 10,
+              gap: 4,
+            }}
+          >
+            <button
+              onClick={() => setActiveTab('whiteboard')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                border: 'none',
+                background: activeTab === 'whiteboard' ? '#3b82f6' : 'transparent',
+                color: activeTab === 'whiteboard' ? '#ffffff' : '#94a3b8',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <PenTool size={14} />
+              <span>Whiteboard & Notebook</span>
+            </button>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255, 255, 255, 0.15)' }} />
+            <button
+              onClick={() => setActiveTab('meeting')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                border: 'none',
+                background: activeTab === 'meeting' ? '#3b82f6' : 'transparent',
+                color: activeTab === 'meeting' ? '#ffffff' : '#94a3b8',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Users size={14} />
+              <span>Meeting & Controls</span>
+              {participantCount > 0 && (
+                <span
+                  style={{
+                    background: activeTab === 'meeting' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    padding: '1px 6px',
+                    borderRadius: 10,
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {participantCount}
+                </span>
+              )}
+            </button>
 
-        <ParticipantList conn={conn} currentUserId={currentUserId} displayName={displayName} />
+            <button
+              onClick={() => {
+                setActiveTab('chat');
+                setUnreadChatCount(0);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                border: 'none',
+                background: activeTab === 'chat' ? '#3b82f6' : 'transparent',
+                color: activeTab === 'chat' ? '#ffffff' : '#94a3b8',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <MessageSquare size={14} />
+              <span>Chat</span>
+              {unreadChatCount > 0 && (
+                <span
+                  style={{
+                    background: '#ef4444',
+                    color: '#ffffff',
+                    padding: '1px 6px',
+                    borderRadius: 10,
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {unreadChatCount}
+                </span>
+              )}
+            </button>
+          </nav>
+        </div>
 
-        <div style={{ width: 1, height: 20, background: 'rgba(255, 255, 255, 0.15)' }} />
+        {/* Right Section: Quick Mic Mute, Share Pointer, Share Modal Trigger, User Profile Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Host Pending Cursor Share Approvals */}
+          {isHost && pendingCursorRequests.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {pendingCursorRequests.map((req) => (
+                <div
+                  key={req.requester_session_id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'rgba(59, 130, 246, 0.25)',
+                    border: '1px solid rgba(59, 130, 246, 0.5)',
+                    borderRadius: 8,
+                    padding: '3px 8px',
+                    fontSize: 11,
+                    color: '#93c5fd',
+                  }}
+                >
+                  <MousePointer2 size={12} />
+                  <span>
+                    <strong>{req.display_name}</strong> wants to show cursor
+                  </span>
+                  <button
+                    onClick={() => handleCursorDecision(req.requester_session_id, true)}
+                    style={{
+                      background: '#22c55e',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 4,
+                      padding: '2px 6px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Allow
+                  </button>
+                  <button
+                    onClick={() => handleCursorDecision(req.requester_session_id, false)}
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.8)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 4,
+                      padding: '2px 6px',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Deny
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
-        <HostPanel conn={conn} roomId={roomId} />
+          {/* Participant Share Cursor Request Button */}
+          {!isHost && userRole !== 'VIEWER' && (
+            <button
+              onClick={() => {
+                if (cursorShareStatus === 'OFF') {
+                  conn.send('CURSOR_PERMISSION_REQ', {});
+                  setCursorShareStatus('PENDING');
+                } else if (cursorShareStatus === 'SHARING') {
+                  setCursorShareStatus('OFF');
+                }
+              }}
+              disabled={cursorShareStatus === 'PENDING'}
+              title={
+                cursorShareStatus === 'SHARING'
+                  ? 'Your cursor is currently visible to participants (Click to stop)'
+                  : cursorShareStatus === 'PENDING'
+                  ? 'Waiting for Host approval...'
+                  : 'Ask Host permission to display your cursor to the room'
+              }
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background:
+                  cursorShareStatus === 'SHARING'
+                    ? 'rgba(34, 197, 94, 0.2)'
+                    : cursorShareStatus === 'PENDING'
+                    ? 'rgba(234, 179, 8, 0.2)'
+                    : 'rgba(255, 255, 255, 0.06)',
+                color:
+                  cursorShareStatus === 'SHARING'
+                    ? '#4ade80'
+                    : cursorShareStatus === 'PENDING'
+                    ? '#facc15'
+                    : '#94a3b8',
+                border: `1px solid ${
+                  cursorShareStatus === 'SHARING'
+                    ? 'rgba(34, 197, 94, 0.4)'
+                    : cursorShareStatus === 'PENDING'
+                    ? 'rgba(234, 179, 8, 0.4)'
+                    : 'rgba(255, 255, 255, 0.12)'
+                }`,
+                borderRadius: 8,
+                padding: '5px 11px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: cursorShareStatus === 'PENDING' ? 'not-allowed' : 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <MousePointer2 size={13} />
+              <span>
+                {cursorShareStatus === 'SHARING'
+                  ? 'Pointer: Shared'
+                  : cursorShareStatus === 'PENDING'
+                  ? 'Request Pending...'
+                  : 'Share Pointer'}
+              </span>
+            </button>
+          )}
+
+          {/* Quick Voice Mic Button */}
+          {voiceMesh.isConnected && (
+            <button
+              onClick={() => voiceMesh.toggleMute()}
+              title={voiceMesh.isMuted ? 'Microphone is Muted (Click to Unmute)' : 'Microphone is Live (Click to Mute)'}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                background: voiceMesh.isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
+                color: voiceMesh.isMuted ? '#ef4444' : '#22c55e',
+                border: `1px solid ${voiceMesh.isMuted ? 'rgba(239, 68, 68, 0.35)' : 'rgba(34, 197, 94, 0.35)'}`,
+                borderRadius: 8,
+                padding: '5px 11px',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {voiceMesh.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
+              <span>{voiceMesh.isMuted ? 'Muted' : 'Speaking'}</span>
+            </button>
+          )}
+
+          {/* Quick Share Modal Button */}
+          <button
+            onClick={() => setIsShareModalOpen(true)}
+            title="Share Board Link & Real-time QR Code"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(59, 130, 246, 0.2)',
+              color: '#60a5fa',
+              border: '1px solid rgba(59, 130, 246, 0.3)',
+              borderRadius: 8,
+              padding: '5px 11px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <QrCode size={14} />
+            <span>Share & QR</span>
+          </button>
+
+          <div style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+
+          {/* User Display Badge with Role Indicator */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 13, color: '#f8fafc', fontWeight: 500 }}>{displayName}</span>
+            <span
+              style={{
+                background:
+                  userRole === 'HOST'
+                    ? 'rgba(245, 158, 11, 0.2)'
+                    : userRole === 'VIEWER'
+                    ? 'rgba(168, 85, 247, 0.2)'
+                    : 'rgba(59, 130, 246, 0.2)',
+                color: userRole === 'HOST' ? '#fbbf24' : userRole === 'VIEWER' ? '#c084fc' : '#60a5fa',
+                border: `1px solid ${
+                  userRole === 'HOST'
+                    ? 'rgba(245, 158, 11, 0.3)'
+                    : userRole === 'VIEWER'
+                    ? 'rgba(168, 85, 247, 0.3)'
+                    : 'rgba(59, 130, 246, 0.3)'
+                }`,
+                padding: '2px 8px',
+                borderRadius: 12,
+                fontSize: 11,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 4,
+              }}
+            >
+              {userRole === 'HOST' && <Crown size={12} />}
+              {userRole === 'VIEWER' && <Eye size={12} />}
+              {userRole === 'EDITOR' && <Edit3 size={12} />}
+              <span>{userRole}</span>
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* =========================================================================
+          CONTENT WORKSPACE (calc(100vh - 52px))
+          Tab 1: Whiteboard & Notebook (Drawing viewport preserved continuously)
+          Tab 2: Meeting & Controls (Roster, Permissions, Muting, Voice, Security)
+          Tab 3: Chat (Spacious conversation view)
+         ========================================================================= */}
+      <div style={{ position: 'relative', width: '100%', flex: 1, overflow: 'hidden' }}>
+        {/* ==================== TAB 1: WHITEBOARD & NOTEBOOK ==================== */}
+        <div
+          style={{
+            display: activeTab === 'whiteboard' ? 'block' : 'none',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+          }}
+        >
+          {/* Prominent Access Control Banner for Non-Hosts */}
+          {isAccessDisabled && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 16,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'rgba(239, 68, 68, 0.95)',
+                backdropFilter: 'blur(12px)',
+                color: '#ffffff',
+                padding: '7px 20px',
+                borderRadius: 20,
+                fontSize: 13,
+                fontWeight: 700,
+                boxShadow: '0 6px 20px rgba(239, 68, 68, 0.5)',
+                zIndex: 40,
+              }}
+            >
+              <Lock size={16} />
+              <span>
+                {isBoardLocked
+                  ? 'BOARD ACCESS DISABLED BY HOST — You are in read-only mode'
+                  : 'VIEW-ONLY ACCESS — The Host has set your permission to Viewer'}
+              </span>
+            </div>
+          )}
+
+          {/* Host Notification when Board is Locked for Participants */}
+          {isHost && isBoardLocked && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 16,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                background: 'rgba(245, 158, 11, 0.95)',
+                backdropFilter: 'blur(12px)',
+                color: '#0f172a',
+                padding: '7px 20px',
+                borderRadius: 20,
+                fontSize: 13,
+                fontWeight: 700,
+                boxShadow: '0 6px 20px rgba(245, 158, 11, 0.4)',
+                zIndex: 40,
+              }}
+            >
+              <Lock size={16} />
+              <span>Board Access Disabled for Participants (Only Host Can Draw)</span>
+            </div>
+          )}
+
+          {/* Top Right: Synchronized Audio Recording Bar */}
+          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 40 }}>
+            <AudioRecorderBar store={store} />
+          </div>
+
+          {/* Floating GoodNotes Canvas Toolbar (only active for active editors & Host) */}
+          {!isAccessDisabled && (
+            <CanvasToolbar store={store} onToggleStickers={() => setIsStickersOpen((o) => !o)} />
+          )}
+
+          {/* Real-Time Remote Cursors Overlay */}
+          <CursorOverlay
+            conn={conn}
+            panX={store.panX}
+            panY={store.panY}
+            zoom={store.zoom}
+            hostSessionId={hostSessionId}
+            allowedCursorSessionIds={allowedCursorSessionIds}
+          />
+
+          {/* Bottom Page Navigation Bar */}
+          <PageNavigationBar
+            store={store}
+            onToggleThumbnails={() => setIsThumbnailsOpen((o) => !o)}
+          />
+
+          {/* Multi-Page Thumbnails Drawer */}
+          <PageThumbnailsDrawer
+            store={store}
+            isOpen={isThumbnailsOpen}
+            onClose={() => setIsThumbnailsOpen(false)}
+          />
+
+          {/* Sticker & Elements Drawer */}
+          <StickerDrawer
+            store={store}
+            isOpen={isStickersOpen}
+            onClose={() => setIsStickersOpen(false)}
+          />
+
+          {/* Infinite Canvas Viewport (Read-only enforcement when access disabled) */}
+          <CanvasView store={store} isReadOnly={isAccessDisabled} onCursorMove={handleCursorMove} />
+        </div>
+
+        {/* ==================== TAB 2: MEETING & CONTROLS ==================== */}
+        <div
+          style={{
+            display: activeTab === 'meeting' ? 'block' : 'none',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            overflowY: 'auto',
+          }}
+        >
+          <MeetingControlsTab
+            conn={conn}
+            store={store}
+            voiceMesh={voiceMesh}
+            roomId={roomId}
+            currentUserId={currentUserId}
+            displayName={displayName}
+            serverAddress={serverAddress}
+            isHost={isHost}
+            isBoardLocked={isBoardLocked}
+            allowedCursorSessionIds={allowedCursorSessionIds}
+            onToggleCursorSharing={handleToggleCursorSharingForParticipant}
+            onToggleBoardAccess={handleToggleBoardAccess}
+            onSwitchToDrawing={() => setActiveTab('whiteboard')}
+          />
+        </div>
+
+        {/* ==================== TAB 3: CONVERSATION CHAT ==================== */}
+        <div
+          style={{
+            display: activeTab === 'chat' ? 'block' : 'none',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+          }}
+        >
+          <ChatTab
+            conn={conn}
+            displayName={displayName}
+            currentUserId={currentUserId}
+            onSwitchToDrawing={() => setActiveTab('whiteboard')}
+          />
+        </div>
       </div>
 
-      {/* Top Right: Synchronized Audio Recording Bar */}
-      <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 40 }}>
-        <AudioRecorderBar store={store} />
-      </div>
-
-      {/* Floating GoodNotes Canvas Toolbar */}
-      <CanvasToolbar store={store} onToggleStickers={() => setIsStickersOpen((o) => !o)} />
-
-      {/* Real-Time Remote Cursors Overlay */}
-      <CursorOverlay conn={conn} panX={store.panX} panY={store.panY} zoom={store.zoom} />
-
-      {/* Real-time Room Text Chat */}
-      <ChatBox conn={conn} displayName={displayName} />
-
-      {/* WebRTC Voice Group Audio Controls */}
-      <VoiceControls voiceMesh={voiceMesh} />
-
-      {/* Bottom Page Navigation Bar */}
-      <PageNavigationBar
-        store={store}
-        onToggleThumbnails={() => setIsThumbnailsOpen((o) => !o)}
+      {/* Global Graphical Share & QR Code Modal */}
+      <ShareRoomModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        roomId={roomId}
+        serverAddress={serverAddress}
       />
-
-      {/* Multi-Page Thumbnails Drawer */}
-      <PageThumbnailsDrawer
-        store={store}
-        isOpen={isThumbnailsOpen}
-        onClose={() => setIsThumbnailsOpen(false)}
-      />
-
-      {/* Sticker & Elements Drawer */}
-      <StickerDrawer
-        store={store}
-        isOpen={isStickersOpen}
-        onClose={() => setIsStickersOpen(false)}
-      />
-
-      {/* Infinite Canvas Viewport with Paper Templates & Precision Ruler */}
-      <CanvasView store={store} onCursorMove={handleCursorMove} />
     </div>
   );
 };
+export default WhiteboardRoomPage;

@@ -5,21 +5,32 @@ import { RendererRegistry } from '../registry/RendererRegistry';
 
 interface CanvasViewProps {
   store: CanvasStore;
+  isReadOnly?: boolean;
   onCursorMove?: (worldPoint: Point) => void;
 }
 
-export const CanvasView: React.FC<CanvasViewProps> = ({ store, onCursorMove }) => {
+export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = false, onCursorMove }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const isPanningRef = useRef(false);
   const panStartRef = useRef<Point>({ x: 0, y: 0 });
   const isPointerDownRef = useRef(false);
 
-  // Screen to world coordinates transform
+  // Screen to world coordinates transform with sub-pixel canvas bounding box alignment
   const screenToWorld = useCallback(
-    (screenX: number, screenY: number): Point => {
+    (clientX: number, clientY: number): Point => {
+      const canvas = canvasRef.current;
+      if (!canvas) {
+        return {
+          x: (clientX - store.panX) / store.zoom,
+          y: (clientY - store.panY) / store.zoom,
+        };
+      }
+      const rect = canvas.getBoundingClientRect();
+      const canvasX = clientX - rect.left;
+      const canvasY = clientY - rect.top;
       return {
-        x: (screenX - store.panX) / store.zoom,
-        y: (screenY - store.panY) / store.zoom,
+        x: (canvasX - store.panX) / store.zoom,
+        y: (canvasY - store.panY) / store.zoom,
       };
     },
     [store.panX, store.panY, store.zoom]
@@ -255,6 +266,13 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, onCursorMove }) =
 
     if (e.button !== 0) return; // Only primary button for drawing tools
 
+    if (isReadOnly) {
+      // In read-only / board-disabled mode, primary drag pans the viewport instead of drawing
+      isPanningRef.current = true;
+      panStartRef.current = { x: e.clientX - store.panX, y: e.clientY - store.panY };
+      return;
+    }
+
     isPointerDownRef.current = true;
     const worldPoint = screenToWorld(e.clientX, e.clientY);
     const activeTool = ToolRegistry.get(store.activeToolId);
@@ -395,12 +413,16 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, onCursorMove }) =
   // Zoom with wheel centered at cursor
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
     const newZoom = Math.max(0.15, Math.min(4.0, store.zoom * zoomFactor));
 
-    const mouseX = e.clientX;
-    const mouseY = e.clientY;
-    const worldBefore = screenToWorld(mouseX, mouseY);
+    const worldBefore = screenToWorld(e.clientX, e.clientY);
 
     store.setZoom(newZoom);
     store.setPan(mouseX - worldBefore.x * newZoom, mouseY - worldBefore.y * newZoom);

@@ -77,6 +77,32 @@ async def test_host_controls_and_snapshots(tmp_path: Path):
     locked_broadcasts = [m for m in guest_sess.inbox if m.type == "HOST_ROOM_LOCKED"]
     assert len(locked_broadcasts) == 1
     assert locked_broadcasts[0].payload["is_locked"] is True
+    assert room_actor.is_board_locked is True
+
+    # 1.5 Verify that board editing is disabled for guest while room is locked
+    blocked_elem = CanvasElement(
+        id="rect-blocked",
+        type=ElementType.RECTANGLE,
+        x=10.0,
+        y=10.0,
+        width=50.0,
+        height=50.0,
+        created_by="sess-guest",
+        last_modified_by="sess-guest",
+        last_modified_at=1000,
+    )
+    await room_actor.enqueue_operation(
+        guest_sess,
+        MessageEnvelope(
+            room_id="admin-room",
+            sender_id="sess-guest",
+            type="CANVAS_OP_REQ",
+            payload=CanvasOperation(client_op_id="op-blocked-1", op_type=CanvasOperationType.ADD, element=blocked_elem).model_dump(),
+        ),
+    )
+    await room_actor._queue.join()
+    board_locked_rejects = [m for m in guest_sess.inbox if m.type == "CANVAS_OP_REJECT" and m.payload.get("error") == "BOARD_ACCESS_DISABLED"]
+    assert len(board_locked_rejects) == 1
 
     # 2. Add an element to canvas to prepare for export
     elem = CanvasElement(
@@ -144,7 +170,61 @@ async def test_host_controls_and_snapshots(tmp_path: Path):
     snapshot_after = room_actor.canvas_state.get_snapshot()
     assert "circle-restored-2" in snapshot_after["elements"]
 
-    # 5. Test User Kicking
+    # 5. Test Role Permissions (Editor vs Viewer)
+    set_role_env = MessageEnvelope(
+        room_id="admin-room",
+        sender_id="sess-host",
+        type="HOST_SET_USER_ROLE",
+        payload={"target_session_id": "sess-guest", "role": "VIEWER"},
+    )
+    await context.event_bus.dispatch(host_sess, set_role_env)
+    assert guest_sess.role == "VIEWER"
+
+    role_updated_msgs = [m for m in guest_sess.inbox if m.type == "HOST_ROLE_UPDATED"]
+    assert len(role_updated_msgs) == 1
+    assert role_updated_msgs[0].payload["role"] == "VIEWER"
+
+    # Guest attempts canvas mutation as VIEWER -> Should be rejected
+    mutation_op = CanvasOperation(
+        client_op_id="op-viewer-attempt",
+        op_type=CanvasOperationType.ADD,
+        element=CanvasElement(
+            id="viewer-elem-1",
+            type=ElementType.RECTANGLE,
+            x=10,
+            y=10,
+            created_by="sess-guest",
+            last_modified_by="sess-guest",
+            last_modified_at=3000,
+        ),
+    )
+    mutate_env = MessageEnvelope(
+        room_id="admin-room",
+        sender_id="sess-guest",
+        type="CANVAS_OP_REQ",
+        payload=mutation_op.model_dump(),
+    )
+    await context.event_bus.dispatch(guest_sess, mutate_env)
+    import asyncio
+    await asyncio.sleep(0.05)  # Wait for room actor consumer queue
+
+    perm_reject_msgs = [m for m in guest_sess.inbox if m.type == "CANVAS_OP_REJECT" and m.payload.get("error") == "PERMISSION_DENIED"]
+    assert len(perm_reject_msgs) == 1
+    assert perm_reject_msgs[0].payload["error"] == "PERMISSION_DENIED"
+
+    # 5.5 Test Host Muting User
+    mute_env = MessageEnvelope(
+        room_id="admin-room",
+        sender_id="sess-host",
+        type="HOST_MUTE_USER",
+        payload={"target_session_id": "sess-guest"},
+    )
+    await context.event_bus.dispatch(host_sess, mute_env)
+    muted_msgs = [m for m in guest_sess.inbox if m.type == "HOST_MUTED_BY_ADMIN"]
+    assert len(muted_msgs) == 1
+    assert muted_msgs[0].payload["target_session_id"] == "sess-guest"
+
+    # 6. Test User Kicking
     kick_env = MessageEnvelope(
         room_id="admin-room",
         sender_id="sess-host",

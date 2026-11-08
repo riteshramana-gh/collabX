@@ -62,6 +62,19 @@ export class WebRTCVoiceMesh {
         }
       }
     });
+
+    // 4. Inbound Voice State Broadcast (Peer joined or changed state)
+    this.conn.on('VOICE_STATE_BROADCAST', async (envelope) => {
+      if (!this.isConnected || !this.localStream) return;
+      const peerId = envelope.payload?.session_id;
+      const myId = (this.conn as any).senderId;
+      if (!peerId || peerId === myId) return;
+
+      // Avoid glare: Peer with smaller ID initiates offer
+      if (!this.peerConnections.has(peerId) && myId < peerId) {
+        await this.initiateCallToPeer(peerId);
+      }
+    });
   }
 
   public async joinVoice(): Promise<void> {
@@ -87,14 +100,15 @@ export class WebRTCVoiceMesh {
         is_speaking: false,
       });
 
-      // Request roster to initiate offers to all peers currently in room
+      // Request roster to initiate offers to existing peers currently in room
       this.conn.send('PRESENCE_ROSTER_REQ', {});
 
+      const myId = (this.conn as any).senderId;
       this.conn.on('PRESENCE_ROSTER_RES', async (envelope) => {
         const peers = (envelope.payload?.participants || []) as Array<{ session_id: string }>;
         for (const peer of peers) {
-          // If peer has smaller ID alphabetically, initiate offer to avoid glare
-          if (peer.session_id !== (this.conn as any).senderId) {
+          // If our ID is smaller alphabetically, initiate offer to avoid glare
+          if (peer.session_id && peer.session_id !== myId && myId < peer.session_id && !this.peerConnections.has(peer.session_id)) {
             await this.initiateCallToPeer(peer.session_id);
           }
         }
@@ -136,9 +150,11 @@ export class WebRTCVoiceMesh {
       if (!audio) {
         audio = new Audio();
         audio.autoplay = true;
+        (audio as any).playsInline = true;
         this.audioElements.set(targetSessionId, audio);
       }
       audio.srcObject = event.streams[0];
+      audio.play().catch((err) => console.warn('[WebRTC] Remote audio autoplay error:', err));
       audio.muted = this.isDeafened;
     };
 

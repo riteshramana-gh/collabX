@@ -33,20 +33,118 @@ class HostControlModule(FeatureModule):
     def register_events(self, registry: EventRegistry) -> None:
         registry.register("HOST_LOCK_ROOM", self.handle_lock_room)
         registry.register("HOST_KICK_USER", self.handle_kick_user)
+        registry.register("HOST_MUTE_USER", self.handle_mute_user)
+        registry.register("HOST_SET_USER_ROLE", self.handle_set_user_role)
         registry.register("HOST_EXPORT_SNAPSHOT", self.handle_export_snapshot)
         registry.register("HOST_RESTORE_SNAPSHOT", self.handle_restore_snapshot)
 
-    async def handle_lock_room(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Locks or unlocks a room."""
+    async def handle_mute_user(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Allows room host to mute a specific participant or mute all participants."""
         room_id = envelope.room_id
+        if session.role != "HOST":
+            logger.warning(f"User {session.session_id} attempted to mute participants without HOST permissions")
+            return
+
+        target_session_id = envelope.payload.get("target_session_id")
+        if target_session_id == "all":
+            logger.info(f"Host {session.display_name} muted all participants in room {room_id}")
+            await self.context.connection_manager.broadcast_to_room(
+                room_id,
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="HOST_MUTED_BY_ADMIN",
+                    payload={"target_session_id": "all", "muted_by": session.display_name},
+                ),
+            )
+        elif target_session_id:
+            target_session = await self.context.connection_manager.get_session(target_session_id)
+            if target_session and target_session.room_id == room_id:
+                logger.info(f"Host {session.display_name} muted participant {target_session.display_name}")
+                await target_session.send_envelope(
+                    MessageEnvelope(
+                        room_id=room_id,
+                        sender_id="server",
+                        type="HOST_MUTED_BY_ADMIN",
+                        payload={"target_session_id": target_session_id, "muted_by": session.display_name},
+                    )
+                )
+
+    async def handle_set_user_role(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Sets participant permission role (EDITOR vs VIEWER). Only the HOST can change roles."""
+        room_id = envelope.room_id
+        if session.role != "HOST":
+            logger.warning(f"User {session.session_id} attempted to set roles without HOST permissions")
+            return
+
+        target_session_id = envelope.payload.get("target_session_id")
+        new_role = envelope.payload.get("role", "EDITOR").upper()
+        if new_role not in ("EDITOR", "VIEWER"):
+            new_role = "EDITOR"
+
+        if not target_session_id:
+            return
+
+        target_session = await self.context.connection_manager.get_session(target_session_id)
+        if target_session and target_session.room_id == room_id:
+            target_session.role = new_role
+            logger.info(f"Host {session.display_name} set {target_session.display_name} role to {new_role}")
+
+            # Notify the target user
+            await target_session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="HOST_ROLE_UPDATED",
+                    payload={"role": new_role, "updated_by": session.display_name},
+                )
+            )
+
+            # Broadcast updated role to all room participants
+            await self.context.connection_manager.broadcast_to_room(
+                room_id,
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="PRESENCE_ROLE_CHANGED",
+                    payload={
+                        "session_id": target_session_id,
+                        "display_name": target_session.display_name,
+                        "role": new_role,
+                    },
+                ),
+            )
+
+            # If user became VIEWER, remove their cursor from all peers
+            if new_role == "VIEWER":
+                await self.context.connection_manager.broadcast_to_room(
+                    room_id,
+                    MessageEnvelope(
+                        room_id=room_id,
+                        sender_id="server",
+                        type="PRESENCE_CURSOR_REMOVE",
+                        payload={"session_id": target_session_id},
+                    ),
+                )
+
+    async def handle_lock_room(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Locks or unlocks board editing access for the room."""
+        room_id = envelope.room_id
+        if session.role != "HOST":
+            logger.warning(f"User {session.session_id} attempted to lock room without HOST permissions")
+            return
+
         lock_state = bool(envelope.payload.get("is_locked", True))
+        room_actor = await self.context.room_manager.get_room(room_id)
+        if room_actor:
+            room_actor.is_board_locked = lock_state
 
         if lock_state:
             self.locked_rooms.add(room_id)
         else:
             self.locked_rooms.discard(room_id)
 
-        # Broadcast lock status
+        # Broadcast lock status to all members in the room
         broadcast_env = MessageEnvelope(
             room_id=room_id,
             sender_id="server",
@@ -58,6 +156,10 @@ class HostControlModule(FeatureModule):
     async def handle_kick_user(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Kicks a participant from the room."""
         room_id = envelope.room_id
+        if session.role != "HOST":
+            logger.warning(f"User {session.session_id} attempted to kick user without HOST permissions")
+            return
+
         target_session_id = envelope.payload.get("target_session_id")
         reason = envelope.payload.get("reason", "Kicked by room host")
 
@@ -93,6 +195,10 @@ class HostControlModule(FeatureModule):
     async def handle_export_snapshot(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Exports the complete canvas state, metadata, and history into a downloadable JSON payload."""
         room_id = envelope.room_id
+        if session.role != "HOST":
+            logger.warning(f"User {session.session_id} attempted to export snapshot without HOST permissions")
+            return
+
         room_actor = await self.context.room_manager.get_room(room_id)
         if not room_actor:
             return
@@ -120,6 +226,10 @@ class HostControlModule(FeatureModule):
     async def handle_restore_snapshot(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Restores canvas state from an imported snapshot bundle."""
         room_id = envelope.room_id
+        if session.role != "HOST":
+            logger.warning(f"User {session.session_id} attempted to restore snapshot without HOST permissions")
+            return
+
         snapshot_data = envelope.payload.get("snapshot", {})
         if not snapshot_data or "elements" not in snapshot_data:
             return
