@@ -18,7 +18,7 @@ Built with **React 18 + TypeScript + Vite** on the frontend, **Python + FastAPI 
 8. **WebRTC / Opus Group Voice** operating strictly peer-to-peer over LAN (`iceServers: []`) without internet STUN/TURN dependencies.
 9. **SQLite (WAL Mode)** with repository abstractions for monotonic operation logging and snapshots.
 10. **Authoritative Server State:** Per-room `asyncio.Queue` Actor worker ensuring strict serialization, deduplication, conflict resolution, and gap replay.
-11. **GoodNotes 5 Complete Feature Alignment:** Multi-page notebook, advanced pen styles (Ballpoint, Fountain, Brush), whole/partial/highlighter-only eraser, shape recognition, lasso selection, precision ruler, laser pointer, PDF import/export, stickers drawer, and note-synchronized audio recording.
+11. **GoodNotes 5 Complete Feature Alignment:** Multi-page notebook, advanced pen styles (Ballpoint, Fountain, Brush), whole/partial (segment-splitting) eraser, toggleable smart shape recognition, lasso selection with auto-move switch, paper background patterns & color palettes, laser pointer, PDF import/export, categorized stickers drawer, docked whiteboard chat side panel with granular audience scope, and note-synchronized audio recording.
 
 ---
 
@@ -88,43 +88,74 @@ collabboard-x/
 - **Brush Pen:** Expressive calligraphic variable-width stroke simulation.
 - **Highlighter:** Translucent multiply blending (`opacity: 0.38`), straight-line lock, and independent layer stacking.
 
-### 2. Intelligent Eraser System
-- **Whole-Stroke Erasing:** Removes entire vector element upon intersection.
-- **Partial-Stroke Erasing:** Vector polyline trimming and splitting within the eraser radius.
-- **Erase Highlighter Only:** Toggle to erase only highlighter marks while preserving ink handwriting and notes.
+### 2. Intelligent Eraser System & Transactional Compound History Engine
+- **Whole-Stroke Erasing:** Removes entire vector element upon intersection with eraser path.
+- **Partial-Stroke Erasing:** Segment-based vector polyline trimming that isolates points within the eraser radius and cleanly splits remaining points into independent sub-strokes with identical styling, completely eliminating phantom connector lines.
+- **Erase Highlighter Only:** Toggle to erase only highlighter strokes while leaving pencil handwriting, shapes, and notes intact.
+- **Transactional Compound Undo/Redo Engine:** Continuous eraser swipes, partial splitting passes, and multi-selection deletions are grouped into atomic transaction blocks (`beginTransaction()` / `endTransaction()`). Pressing `Ctrl+Z` undoes the **entire stroke** in a single tap instead of stepping through dozens of coordinate slices. All snapshots are deeply cloned to prevent state mutation.
 
-### 3. Geometric Shapes & Shape Recognition
-- **Shapes:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Double-Arrow, Triangle, and Polygons.
-- **Shape Recognition:** Automatic conversion of rough hand-drawn strokes into clean geometric vectors using the Ramer-Douglas-Peucker algorithm.
+### 3. Geometric Shapes & Smart Shape Detection Toggle
+- **Built-in Geometric Primitives:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Double-Arrow, Triangle, Star, and Polygons.
+- **Smart Shape Detection:** Inactive by default. Toggleable on demand via the toolbar button (`[ ✨ Shapes: ON/OFF ]`). Analyzes freehand strokes using the Ramer-Douglas-Peucker polygon approximation and least-squares regression to snap strokes into crisp geometric forms.
 
-### 4. Lasso Selection & Object Transform
-- **Freeform Lasso:** Ray-casting polygon containment selection for handwriting, shapes, text, and images.
+### 4. Lasso Selection with Instant Move Handoff
+- **Freeform Lasso:** Ray-casting polygon containment selection for handwriting, shapes, text, images, and stickers.
+- **Instant Move Tool Switch:** Automatically switches to the Select / Move tool immediately upon releasing the lasso, allowing instant drag, transform, and rotation without an extra click.
 - **Transformations:** Move, resize, duplicate (`Ctrl+D`), bring to front, send to back, and **object locking** to prevent accidental modifications.
 
-### 5. Multi-Page Notebook & Paper Templates
+### 5. Multi-Page Notebook, Paper Templates & Color Palettes
 - **Page Management:** Bottom navigation bar (`< Page 1 / 4 >`), add page, duplicate page, delete page (with cascading element cleanup), and visual thumbnail drawer.
-- **Paper Templates:** Ruled (lined paper with red margin), Math Grid, Dotted, Blank, and PDF Document Background.
+- **Paper Background Patterns:** Blank, Ruled (lined paper with margin), Math Grid, and Dotted.
+- **Paper Color Palettes:** Clean White, Ivory Warm, Slate Dark, Blackboard/Chalkboard, and Soft Gray, with adaptive contrast that automatically renders bright grid/ruled lines on dark paper templates.
+- **Real-Time Network Sync:** Paper template and background color changes broadcast authoritatively across all connected participants.
 
 ### 6. PDF Document Import & Export
 - **PDF Import:** Render multi-page PDFs directly onto notebook page backgrounds via `pdfjs-dist`.
 - **Vector PDF Export:** Export entire multi-page notebook (paper templates + ink annotations) into a high-resolution PDF document using `jspdf`.
 
-### 7. Presentation & Precision Tools
+### 7. Professional Viewport Navigation (Zoom & Pan)
+- **Cursor-Centered Wheel Zoom:** Exponential smooth zoom centered exactly at mouse pointer position with native scroll blocking.
+- **Touchpad & Pinch Gestures:** Smooth two-finger pan and pinch-to-zoom (`ctrlKey`).
+- **Floating Zoom Widget:** Bottom-left floating controls featuring `[ - ]`, `[ 100% ]` reset, `[ + ]`, and `[ ⛶ Fit to Page ]` centering.
 - **Laser Pointer:** Glowing red/cyan tip with an ephemeral fading particle trail synchronized across peers.
-- **Precision Drafting Ruler:** On-screen movable and rotatable ruler with degree angle readout and stroke snap-to-edge drawing.
+- **Decluttered Canvas:** Removed drafting ruler to maintain a focused, modern digital notebook experience.
 
-### 8. Reusable Elements & Sticker Drawer
-- Categorized sticker drawer with 5 palettes:
-  - **Sticky Notes:** Pastel yellow, blue, green, pink, purple, and orange notes.
-  - **Math & Equations:** $\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$, $x=\frac{-b\pm\sqrt{\Delta}}{2a}$, $e^{i\pi}+1=0$.
-  - **Science & Chemistry:** Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA double helix, resistor, capacitor, $\text{H}_2\text{O}$.
-  - **Flowcharts & Diagrams:** Start/End terminal, Process step, Decision fork, Database, Cloud.
-  - **Badges & Stamps:** APPROVED, URGENT, DRAFT, VERIFIED, QUESTION + custom sticky note creator.
+### 8. Categorized Elements & Editable Sticky Notes
+- Intuitive, tabbed sticker drawer with 1-click center placement:
+  - **Sticky Notes:** Pastel yellow, blue, green, pink, purple, and orange with multi-line text input and adhesive strip styling.
+  - **In-Place Note Editing:** Double-click or double-tap any sticky note or text element on canvas to launch the inline editing overlay.
+  - **Floating Canvas Badge:** Selected sticky notes display a floating `[ ✏️ Edit Note Text ]` badge directly on canvas.
+  - **Toolbar Action & Pastel Swatches:** Active sticky notes provide an **`[ ✏️ Edit Text ]`** button and 6 pastel color pickers (Canary Lemon `#fef08a`, Mint `#bbf7d0`, Sky `#bae6fd`, Bubblegum `#fbcfe8`, Lavender `#e9d5ff`, Peach `#fed7aa`).
+  - **Word Wrapping & Empty State Guidance:** Multi-line text wraps with automatic padding, and empty notes display an italic placeholder `(Double-click to write note...)`.
+  - **Reactions & Emojis:** Quick emoji grid (👍, ❤️, 🚀, 🔥, 💡, 🎯, 👏, 🎉, 💯, ⚠️, ❓, 🏆, etc.).
+  - **Rubber Stamps & Badges:** Official circular and rectangular stamps (APPROVED, CONFIDENTIAL, REVIEWED, DRAFT, URGENT).
+  - **Flowcharts & Diagrams:** Start/End terminal, Process step, Decision fork, Database cylinder, Cloud service.
+  - **Math & Science:** $\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$, Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA helix, Resistor.
+- **Auto-Select & Move:** Elements automatically select and switch to the Move tool upon insertion for immediate drag repositioning.
 
-### 9. Note-Synchronized Audio Recording
+### 9. Docked Whiteboard Chat with Granular Audience Scope
+- **Side Panel Integration:** Docked directly onto the whiteboard (`ChatSidePanel`) instead of a separate tab, keeping your drawings continuously in view while chatting.
+- **Audience Targeting:**
+  - `👥 Everyone (Public)`: Broadcasts messages to all participants in the room.
+  - `👑 Room Host (Private)`: Sends private messages directly to room hosts only.
+  - `🔒 Particular Participant (Direct)`: Encrypted 1-on-1 private messaging routed exclusively to the selected participant and the sender.
+- **Color-Coded Badges:** Clear visual indicators for Host-Only and Direct messages with unread counter badges on the header chat toggle button.
+
+### 10. Note-Synchronized Audio Recording
 - Record lectures or group discussions using the browser's Web Audio MediaRecorder.
 - Real-time elapsed recording timer, audio playback bar, waveform scrubber, and **note timestamp synchronization** (scrubbing audio spotlights notes created during that time slice).
 - Audio export in `.webm` format.
+
+### 11. Modernized Dashboard & Mobile-Friendly GUI
+- **Fun Avatar Picker:** Choose from 12 distinct avatar characters (🦊, 🦉, 🚀, 🎨, 💡, ⚡, 🐱, 🐼, 👾, 🌟, 🎯, 🔮) saved in local storage.
+- **Segmented Mode Switch:** Clean cards for `[ Create Room ]` vs `[ Join Room ]`.
+- **Recent Rooms History:** Quick-join chips for the last 5 visited rooms with 1-click entry.
+- **Mobile Responsive Design:** 
+  - Header compacts gracefully on screens $< 768\text{px}$ without button overflow.
+  - Top floating drawing toolbar auto-scrolls horizontally with tight padding.
+  - Audio recording bar docks safely at `top: 58px, right: 8px`, completely clearing the top toolbar.
+  - Bottom Page Navigation bar docks at bottom-right, cleanly separating from the bottom-left zoom controls.
+  - First-class touch and Apple Pencil / stylus support with accidental scroll suppression.
 
 ---
 
@@ -286,15 +317,17 @@ The desktop GUI window will pop up immediately:
 5. **Share & Graphical QR Code:** Click the **Share & QR** button in the top bar to pop up a visual QR code for mobile/tablet users to scan!
 
 ### 3. Decluttered Workstation: Dedicated Workspace Tabs & Host Access Governance
-The user interface is organized into a clean 52px top navigation header with dedicated, specialized tabs:
+The user interface is organized into a clean 52px top navigation header with dedicated, specialized tabs and a docked side panel:
 
 1. **`🎨 Whiteboard & Notebook` Tab:**
    - Pure, uncompromised drawing and digital note-taking experience with **zero floating clutter**.
-   - Floating GoodNotes toolbar centered at top (`PenTool`, `Highlighter`, `Eraser`, `Lasso`, `Shapes`, `Text`, `Stickers`, `Ruler`, `Laser`).
+   - Floating GoodNotes toolbar centered at top (`PenTool`, `Highlighter`, `Eraser`, `Lasso`, `Shapes`, `Text`, `Stickers`, `Laser`, `✨ Shapes Toggle`, `📄 Paper Background`).
    - Note-synchronized `AudioRecorderBar` in top right.
    - Page navigation and thumbnails drawer at bottom.
+   - Smooth exponential cursor-centered zoom widget at bottom left (`[ - ]`, `[ 100% ]`, `[ + ]`, `[ ⛶ Fit ]`).
    - Canvas state is preserved continuously in memory when switching tabs (no redraws or lost context).
    - **Board Access Enforcement:** When the Host disables board access, all non-host participants have their drawing toolbar hidden and see a prominent **"🔒 BOARD ACCESS DISABLED BY HOST"** banner. Canvas drawing is locked to read-only panning.
+   - **Docked Live Chat Panel:** Openable via the header `[ 💬 Chat ]` button directly over the whiteboard so participants can converse without interrupting their sketching.
 
 2. **`👥 Meeting & Controls` Tab:**
    - **Master Board Access Governance Card:**
@@ -309,9 +342,10 @@ The user interface is organized into a clean 52px top navigation header with ded
    - **Instant Share & QR Code Card:** Real-time graphical QR code rendered on canvas, instant LAN share link copy button, and room code copy button.
    - **Room Governance & Snapshots:** Room lock toggle, state export to `.json`, and state restoration.
 
-3. **`💬 Chat` Tab:**
-   - Dedicated spacious room conversation stream with message timestamps, color-coded sender bubbles, and auto-scroll.
-   - Shows an unread notification counter badge (e.g. `💬 Chat (3)`) on the top header when new messages arrive while in other tabs.
+3. **`💬 Docked Whiteboard Chat` (Side Panel Drawer):**
+   - Click the header `[ 💬 Chat ]` toggle button at any time to slide out the docked chat panel.
+   - Filter chat audience with a single click: `👥 Everyone (Public)`, `👑 Room Host (Private)`, or `🔒 Particular Participant (Direct 1-on-1)`.
+   - Real-time unread notification badge (e.g. `💬 Chat [3]`) in the header alerts users when new messages arrive while the panel is collapsed.
 
 ### 4. Pixel-Exact Coordinates & Host-Moderated Cursor Governance
 

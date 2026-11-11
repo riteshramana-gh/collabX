@@ -72,6 +72,7 @@ class CanvasElement(BaseModel):
     text_align: Optional[str] = Field(default="left", description="left | center | right")
     image_src: Optional[str] = Field(default=None, description="Base64 data URL for images and stickers")
     polygon_sides: Optional[int] = Field(default=3, description="Number of vertices for polygons/stars")
+    sticker_type: Optional[str] = Field(default=None, description="Subtype: sticky_note | emoji | badge | diagram | math")
     is_locked: Optional[bool] = Field(default=False, description="Whether element is locked from movement")
     z_index: int = Field(default=0, description="Layer ordering index")
     version: int = Field(default=1, description="Per-element mutation counter")

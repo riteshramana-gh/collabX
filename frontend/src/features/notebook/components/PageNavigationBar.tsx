@@ -53,6 +53,7 @@ export const PageNavigationBar: React.FC<PageNavigationBarProps> = ({
 
   return (
     <div
+      className="cb-page-nav-bar"
       style={{
         position: 'absolute',
         bottom: 24,

@@ -5,7 +5,7 @@ import { CanvasView } from '../features/canvas/components/CanvasView';
 import { CanvasToolbar } from '../features/canvas/components/CanvasToolbar';
 import { CursorOverlay } from '../features/presence/components/CursorOverlay';
 import { MeetingControlsTab } from '../features/meeting/components/MeetingControlsTab';
-import { ChatTab } from '../features/chat/components/ChatTab';
+import { ChatSidePanel } from '../features/chat/components/ChatSidePanel';
 import { WebRTCVoiceMesh } from '../features/voice/rtc/WebRTCVoiceMesh';
 import { registerBuiltinRenderers } from '../features/canvas/renderers/builtinRenderers';
 import { registerBuiltinTools } from '../features/canvas/tools/builtinTools';
@@ -37,7 +37,7 @@ import {
 registerBuiltinRenderers();
 registerBuiltinTools();
 
-export type TabType = 'whiteboard' | 'meeting' | 'chat';
+export type TabType = 'whiteboard' | 'meeting';
 
 interface WhiteboardRoomPageProps {
   roomId: string;
@@ -66,6 +66,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
   // Tab counters & state
   const [participantCount, setParticipantCount] = useState<number>(1);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
 
   // GoodNotes Notebook Drawer States & Share Modal
   const [isThumbnailsOpen, setIsThumbnailsOpen] = useState(false);
@@ -207,9 +208,12 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
     });
 
     const unsubChat = conn.on('CHAT_MSG_BROADCAST', () => {
-      if (activeTab !== 'chat') {
-        setUnreadChatCount((c) => c + 1);
-      }
+      setIsChatOpen((open) => {
+        if (!open) {
+          setUnreadChatCount((c) => c + 1);
+        }
+        return open;
+      });
     });
 
     conn.connect();
@@ -362,11 +366,31 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
         flexDirection: 'column',
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .cb-desktop-only { display: none !important; }
+          .cb-mobile-only { display: inline-flex !important; }
+          .cb-header { height: 48px !important; min-height: 48px !important; padding: 0 8px !important; gap: 4px !important; }
+          .cb-header-left { gap: 6px !important; }
+          .cb-header-center { gap: 4px !important; }
+          .cb-header-right { gap: 4px !important; }
+          .cb-tab-btn { padding: 4px 8px !important; font-size: 11px !important; gap: 4px !important; }
+          .cb-btn-compact { padding: 4px 8px !important; font-size: 11px !important; }
+          .cb-status-badge span { display: none !important; }
+          .cb-badge-text { display: none !important; }
+          .cb-canvas-toolbar { top: 8px !important; max-width: calc(100vw - 16px) !important; padding: 4px 6px !important; gap: 3px !important; }
+          .cb-audio-recorder-wrapper { top: 58px !important; right: 8px !important; z-index: 45 !important; transform: scale(0.9) !important; transform-origin: top right !important; }
+          .cb-page-nav-bar { bottom: 12px !important; left: auto !important; right: 8px !important; transform: none !important; padding: 4px 8px !important; gap: 4px !important; }
+          .cb-zoom-widget { bottom: 12px !important; left: 8px !important; padding: 4px 6px !important; gap: 2px !important; }
+        }
+      `}</style>
+
       {/* =========================================================================
           TOP UNIFIED NAVIGATION HEADER BAR (Height: 52px)
           Houses Brand, Room info, Master Access Switch, Tab Switcher, Voice, Role
          ========================================================================= */}
       <header
+        className="cb-header"
         style={{
           height: 52,
           minHeight: 52,
@@ -384,7 +408,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
         }}
       >
         {/* Left Section: Back, Brand, Room ID, Live Status */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div className="cb-header-left" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <button
             onClick={onLeave}
             title="Back to Dashboard"
@@ -405,7 +429,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontWeight: 800, fontSize: 15, color: '#38bdf8', letterSpacing: '-0.3px' }}>
+            <span className="cb-desktop-only" style={{ fontWeight: 800, fontSize: 15, color: '#38bdf8', letterSpacing: '-0.3px' }}>
               CollabBoard
             </span>
             <span
@@ -422,15 +446,15 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             </span>
           </div>
 
-          <div style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
 
-          <div style={{ fontSize: 13, color: '#cbd5e1' }}>
+          <div className="cb-desktop-only" style={{ fontSize: 13, color: '#cbd5e1' }}>
             Room: <strong style={{ color: '#ffffff' }}>{roomId}</strong>
           </div>
 
-          <div style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
 
-          {getStatusBadge()}
+          <div className="cb-status-badge">{getStatusBadge()}</div>
         </div>
 
         {/* Center Section: Main Workstation Tab Switcher & Master Access Button */}
@@ -460,7 +484,8 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               }}
             >
               {isBoardLocked ? <Lock size={13} /> : <Unlock size={13} />}
-              <span>{isBoardLocked ? 'Board Access: Disabled' : 'Board Access: Open'}</span>
+              <span className="cb-desktop-only">{isBoardLocked ? 'Board Access: Disabled' : 'Board Access: Open'}</span>
+              <span className="cb-badge-text" style={{ display: 'none' }}>{isBoardLocked ? 'Locked' : 'Open'}</span>
             </button>
           ) : isBoardLocked ? (
             <span
@@ -495,6 +520,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           >
             <button
               onClick={() => setActiveTab('whiteboard')}
+              className="cb-tab-btn"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -511,11 +537,13 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               }}
             >
               <PenTool size={14} />
-              <span>Whiteboard & Notebook</span>
+              <span>Whiteboard</span>
+              <span className="cb-desktop-only">&nbsp;&amp; Notebook</span>
             </button>
 
             <button
               onClick={() => setActiveTab('meeting')}
+              className="cb-tab-btn"
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -532,7 +560,8 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               }}
             >
               <Users size={14} />
-              <span>Meeting & Controls</span>
+              <span>Meeting</span>
+              <span className="cb-desktop-only">&nbsp;&amp; Controls</span>
               {participantCount > 0 && (
                 <span
                   style={{
@@ -545,44 +574,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                   }}
                 >
                   {participantCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveTab('chat');
-                setUnreadChatCount(0);
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: activeTab === 'chat' ? '#3b82f6' : 'transparent',
-                color: activeTab === 'chat' ? '#ffffff' : '#94a3b8',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <MessageSquare size={14} />
-              <span>Chat</span>
-              {unreadChatCount > 0 && (
-                <span
-                  style={{
-                    background: '#ef4444',
-                    color: '#ffffff',
-                    padding: '1px 6px',
-                    borderRadius: 10,
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  {unreadChatCount}
                 </span>
               )}
             </button>
@@ -699,7 +690,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               }}
             >
               <MousePointer2 size={13} />
-              <span>
+              <span className="cb-desktop-only">
                 {cursorShareStatus === 'SHARING'
                   ? 'Pointer: Shared'
                   : cursorShareStatus === 'PENDING'
@@ -729,7 +720,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               }}
             >
               {voiceMesh.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
-              <span>{voiceMesh.isMuted ? 'Muted' : 'Speaking'}</span>
+              <span className="cb-desktop-only">{voiceMesh.isMuted ? 'Muted' : 'Speaking'}</span>
             </button>
           )}
 
@@ -752,14 +743,59 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             }}
           >
             <QrCode size={14} />
-            <span>Share & QR</span>
+            <span className="cb-desktop-only">Share &amp; QR</span>
           </button>
 
-          <div style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+          {/* Quick Chat Side Panel Toggle Button */}
+          <button
+            onClick={() => {
+              setIsChatOpen((o) => !o);
+              setUnreadChatCount(0);
+              if (activeTab !== 'whiteboard') {
+                setActiveTab('whiteboard');
+              }
+            }}
+            title={isChatOpen ? 'Close Chat Side Panel' : 'Open Live Whiteboard Chat Panel'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: isChatOpen ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)',
+              color: isChatOpen ? '#93c5fd' : '#cbd5e1',
+              border: `1px solid ${isChatOpen ? 'rgba(59, 130, 246, 0.55)' : 'rgba(255, 255, 255, 0.15)'}`,
+              borderRadius: 8,
+              padding: '5px 11px',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              position: 'relative',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <MessageSquare size={14} />
+            <span className="cb-desktop-only">Chat</span>
+            {unreadChatCount > 0 && (
+              <span
+                style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  padding: '1px 6px',
+                  borderRadius: 10,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  lineHeight: '13px',
+                }}
+              >
+                {unreadChatCount}
+              </span>
+            )}
+          </button>
+
+          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
 
           {/* User Display Badge with Role Indicator */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: '#f8fafc', fontWeight: 500 }}>{displayName}</span>
+            <span className="cb-desktop-only" style={{ fontSize: 13, color: '#f8fafc', fontWeight: 500 }}>{displayName}</span>
             <span
               style={{
                 background:
@@ -788,7 +824,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               {userRole === 'HOST' && <Crown size={12} />}
               {userRole === 'VIEWER' && <Eye size={12} />}
               {userRole === 'EDITOR' && <Edit3 size={12} />}
-              <span>{userRole}</span>
+              <span className="cb-desktop-only">{userRole}</span>
             </span>
           </div>
         </div>
@@ -871,7 +907,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           )}
 
           {/* Top Right: Synchronized Audio Recording Bar */}
-          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 40 }}>
+          <div className="cb-audio-recorder-wrapper" style={{ position: 'absolute', top: 16, right: 16, zIndex: 40 }}>
             <AudioRecorderBar store={store} />
           </div>
 
@@ -910,6 +946,15 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             onClose={() => setIsStickersOpen(false)}
           />
 
+          {/* Docked Real-Time Chat Side Panel */}
+          <ChatSidePanel
+            conn={conn}
+            displayName={displayName}
+            currentUserId={currentUserId}
+            isOpen={isChatOpen}
+            onClose={() => setIsChatOpen(false)}
+          />
+
           {/* Infinite Canvas Viewport (Read-only enforcement when access disabled) */}
           <CanvasView store={store} isReadOnly={isAccessDisabled} onCursorMove={handleCursorMove} />
         </div>
@@ -939,25 +984,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             allowedCursorSessionIds={allowedCursorSessionIds}
             onToggleCursorSharing={handleToggleCursorSharingForParticipant}
             onToggleBoardAccess={handleToggleBoardAccess}
-            onSwitchToDrawing={() => setActiveTab('whiteboard')}
-          />
-        </div>
-
-        {/* ==================== TAB 3: CONVERSATION CHAT ==================== */}
-        <div
-          style={{
-            display: activeTab === 'chat' ? 'block' : 'none',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-          }}
-        >
-          <ChatTab
-            conn={conn}
-            displayName={displayName}
-            currentUserId={currentUserId}
             onSwitchToDrawing={() => setActiveTab('whiteboard')}
           />
         </div>

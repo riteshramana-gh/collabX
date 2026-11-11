@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CanvasStore } from '../canvas/state/CanvasStore';
-import { X, Sparkles, StickyNote, Sigma, Atom, GitFork, Award, Plus } from 'lucide-react';
+import { X, Sparkles, StickyNote, Smile, Award, Network, Plus, Check } from 'lucide-react';
 
 interface StickerDrawerProps {
   store: CanvasStore;
@@ -8,76 +8,303 @@ interface StickerDrawerProps {
   onClose: () => void;
 }
 
-type Category = 'notes' | 'math' | 'science' | 'flowchart' | 'badges';
+type Category = 'notes' | 'emojis' | 'badges' | 'diagram' | 'math';
 
 interface StickerItem {
   id: string;
   label: string;
   category: Category;
+  stickerType: 'note' | 'emoji' | 'badge';
   color?: string;
+  strokeColor?: string;
   preview: string;
+  width?: number;
+  height?: number;
 }
 
 const STICKERS: StickerItem[] = [
-  // Sticky Notes
-  { id: 'note-yellow', label: 'Idea Note', category: 'notes', color: '#fef08a', preview: '💡 Idea' },
-  { id: 'note-blue', label: 'To-Do Note', category: 'notes', color: '#bae6fd', preview: '📝 To-Do' },
-  { id: 'note-green', label: 'Goal Note', category: 'notes', color: '#bbf7d0', preview: '🎯 Goal' },
-  { id: 'note-pink', label: 'Urgent Note', category: 'notes', color: '#fbcfe8', preview: '🔥 Urgent' },
-  { id: 'note-purple', label: 'Review Note', category: 'notes', color: '#e9d5ff', preview: '🔍 Review' },
-  { id: 'note-orange', label: 'Reminder Note', category: 'notes', color: '#fed7aa', preview: '⏰ Reminder' },
+  // 1. Sticky Notes
+  {
+    id: 'note-yellow',
+    label: 'Idea Note',
+    category: 'notes',
+    stickerType: 'note',
+    color: '#fef08a',
+    preview: '💡 Great Idea:\nWrite down notes or key discussion points here.',
+    width: 160,
+    height: 140,
+  },
+  {
+    id: 'note-blue',
+    label: 'Action Items',
+    category: 'notes',
+    stickerType: 'note',
+    color: '#bae6fd',
+    preview: '📝 Action Items:\n• Task 1\n• Task 2\n• Due: Friday',
+    width: 160,
+    height: 140,
+  },
+  {
+    id: 'note-green',
+    label: 'Sprint Goal',
+    category: 'notes',
+    stickerType: 'note',
+    color: '#bbf7d0',
+    preview: '🎯 Milestone Goal:\nDeliver core LAN features & pass lab tests.',
+    width: 160,
+    height: 140,
+  },
+  {
+    id: 'note-pink',
+    label: 'Urgent Note',
+    category: 'notes',
+    stickerType: 'note',
+    color: '#fbcfe8',
+    preview: '🔥 High Priority:\nCritical review required before release.',
+    width: 160,
+    height: 140,
+  },
+  {
+    id: 'note-purple',
+    label: 'Research Note',
+    category: 'notes',
+    stickerType: 'note',
+    color: '#e9d5ff',
+    preview: '🔍 Research Findings:\nCompare throughput vs TCP packet latency.',
+    width: 160,
+    height: 140,
+  },
+  {
+    id: 'note-orange',
+    label: 'Notice',
+    category: 'notes',
+    stickerType: 'note',
+    color: '#fed7aa',
+    preview: '⏰ Team Reminder:\nMeeting begins at 10:00 AM on LAN audio.',
+    width: 160,
+    height: 140,
+  },
 
-  // Math & Equations
-  { id: 'math-sum', label: 'Summation', category: 'math', preview: '∑ (i=1 to n)' },
-  { id: 'math-integral', label: 'Definite Integral', category: 'math', preview: '∫ f(x) dx' },
-  { id: 'math-sqrt', label: 'Square Root', category: 'math', preview: '√(a² + b²)' },
-  { id: 'math-quad', label: 'Quadratic Formula', category: 'math', preview: 'x = (-b ± √Δ) / 2a' },
-  { id: 'math-euler', label: "Euler's Identity", category: 'math', preview: 'e^(iπ) + 1 = 0' },
-  { id: 'math-pythagoras', label: 'Pythagorean Theorem', category: 'math', preview: 'a² + b² = c²' },
-  { id: 'math-symbols', label: 'Common Symbols', category: 'math', preview: 'π ≈ 3.14159,  ∞,  ≠,  ±,  ≤,  ≥' },
-  { id: 'math-limit', label: 'Limit', category: 'math', preview: 'lim (x→0) sin(x)/x = 1' },
+  // 2. Reaction Emojis
+  { id: 'emoji-fire', label: 'Fire', category: 'emojis', stickerType: 'emoji', preview: '🔥', width: 70, height: 70 },
+  { id: 'emoji-rocket', label: 'Rocket', category: 'emojis', stickerType: 'emoji', preview: '🚀', width: 70, height: 70 },
+  { id: 'emoji-light', label: 'Idea', category: 'emojis', stickerType: 'emoji', preview: '💡', width: 70, height: 70 },
+  { id: 'emoji-heart', label: 'Heart', category: 'emojis', stickerType: 'emoji', preview: '❤️', width: 70, height: 70 },
+  { id: 'emoji-clap', label: 'Clap', category: 'emojis', stickerType: 'emoji', preview: '👏', width: 70, height: 70 },
+  { id: 'emoji-target', label: 'Bullseye', category: 'emojis', stickerType: 'emoji', preview: '🎯', width: 70, height: 70 },
+  { id: 'emoji-star', label: 'Star', category: 'emojis', stickerType: 'emoji', preview: '⭐', width: 70, height: 70 },
+  { id: 'emoji-100', label: '100', category: 'emojis', stickerType: 'emoji', preview: '💯', width: 70, height: 70 },
+  { id: 'emoji-warn', label: 'Warning', category: 'emojis', stickerType: 'emoji', preview: '⚠️', width: 70, height: 70 },
+  { id: 'emoji-check', label: 'Check', category: 'emojis', stickerType: 'emoji', preview: '✅', width: 70, height: 70 },
+  { id: 'emoji-thumb', label: 'Thumbs Up', category: 'emojis', stickerType: 'emoji', preview: '👍', width: 70, height: 70 },
+  { id: 'emoji-party', label: 'Celebrate', category: 'emojis', stickerType: 'emoji', preview: '🎉', width: 70, height: 70 },
+  { id: 'emoji-bolt', label: 'Fast', category: 'emojis', stickerType: 'emoji', preview: '⚡', width: 70, height: 70 },
+  { id: 'emoji-question', label: 'Question', category: 'emojis', stickerType: 'emoji', preview: '❓', width: 70, height: 70 },
+  { id: 'emoji-trophy', label: 'Winner', category: 'emojis', stickerType: 'emoji', preview: '🏆', width: 70, height: 70 },
+  { id: 'emoji-brain', label: 'Brain', category: 'emojis', stickerType: 'emoji', preview: '🧠', width: 70, height: 70 },
 
-  // Science & Engineering
-  { id: 'sci-benzene', label: 'Benzene Ring', category: 'science', preview: '⬡ Benzene (C₆H₆)' },
-  { id: 'sci-atom', label: 'Atom Symbol', category: 'science', preview: '⚛ Bohr Atom' },
-  { id: 'sci-dna', label: 'DNA Double Helix', category: 'science', preview: '🧬 DNA 5′→3′' },
-  { id: 'sci-resistor', label: 'Resistor Circuit', category: 'science', preview: '—/\\/\\/\\— (R=100Ω)' },
-  { id: 'sci-capacitor', label: 'Capacitor', category: 'science', preview: '—||— (C=10µF)' },
-  { id: 'sci-water', label: 'Water Molecule', category: 'science', preview: '💧 H₂O (104.5°)' },
+  // 3. Badges & Rubber Stamps
+  {
+    id: 'badge-approved',
+    label: 'Approved',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#dcfce7',
+    strokeColor: '#16a34a',
+    preview: 'APPROVED ✔',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-urgent',
+    label: 'Urgent',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#fee2e2',
+    strokeColor: '#dc2626',
+    preview: 'URGENT ⚠',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-draft',
+    label: 'Draft',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#f1f5f9',
+    strokeColor: '#475569',
+    preview: 'DRAFT ✎',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-verified',
+    label: 'Verified',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#e0f2fe',
+    strokeColor: '#0284c7',
+    preview: 'VERIFIED ★',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-wip',
+    label: 'In Progress',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#fef3c7',
+    strokeColor: '#d97706',
+    preview: 'IN PROGRESS ⏳',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-rejected',
+    label: 'Rejected',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#ffe4e6',
+    strokeColor: '#e11d48',
+    preview: 'REJECTED ✖',
+    width: 140,
+    height: 48,
+  },
 
-  // Flowchart & Process
-  { id: 'flow-start', label: 'Start / End Terminal', category: 'flowchart', preview: '([ Start / End ])' },
-  { id: 'flow-process', label: 'Process Action', category: 'flowchart', preview: '[ Step / Process ]' },
-  { id: 'flow-decision', label: 'Decision Fork', category: 'flowchart', preview: '< Condition? >' },
-  { id: 'flow-db', label: 'Database Storage', category: 'flowchart', preview: '[( SQL Database )]' },
-  { id: 'flow-cloud', label: 'Cloud Gateway', category: 'flowchart', preview: '☁️ Cloud Service' },
+  // 4. Diagram & Architecture
+  {
+    id: 'diag-start',
+    label: 'Terminal Point',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#e2e8f0',
+    preview: '([ START / END ])',
+    width: 150,
+    height: 60,
+  },
+  {
+    id: 'diag-proc',
+    label: 'Process Block',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#dbeafe',
+    preview: '[ Process Step ]\nExecute computation',
+    width: 160,
+    height: 80,
+  },
+  {
+    id: 'diag-decision',
+    label: 'Decision Fork',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#fef3c7',
+    preview: '< Is Valid? >\nYes ⟶ / No ⟵',
+    width: 150,
+    height: 80,
+  },
+  {
+    id: 'diag-db',
+    label: 'Database Table',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#fae8ff',
+    preview: '[( SQLite WAL )]\nAuthoritative state',
+    width: 160,
+    height: 80,
+  },
+  {
+    id: 'diag-cloud',
+    label: 'Server Gateway',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#cffafe',
+    preview: '☁️ Central Server\nWebSocket + Raw TCP',
+    width: 160,
+    height: 80,
+  },
 
-  // Badges & Stamps
-  { id: 'badge-approved', label: 'Approved Stamp', category: 'badges', color: '#16a34a', preview: '✔ APPROVED' },
-  { id: 'badge-urgent', label: 'Urgent Stamp', category: 'badges', color: '#dc2626', preview: '⚠ URGENT' },
-  { id: 'badge-draft', label: 'Draft Stamp', category: 'badges', color: '#475569', preview: '✎ DRAFT' },
-  { id: 'badge-question', label: 'Question Badge', category: 'badges', color: '#7c3aed', preview: '❓ QUESTION' },
-  { id: 'badge-verified', label: 'Verified Stamp', category: 'badges', color: '#0284c7', preview: '★ VERIFIED' },
+  // 5. Math & Equations
+  {
+    id: 'math-sum',
+    label: 'Summation',
+    category: 'math',
+    stickerType: 'note',
+    color: '#ffffff',
+    preview: '∑ (i=1 to n) xᵢ',
+    width: 140,
+    height: 70,
+  },
+  {
+    id: 'math-integral',
+    label: 'Definite Integral',
+    category: 'math',
+    stickerType: 'note',
+    color: '#ffffff',
+    preview: '∫ f(x) dx',
+    width: 140,
+    height: 70,
+  },
+  {
+    id: 'math-pyth',
+    label: 'Pythagoras',
+    category: 'math',
+    stickerType: 'note',
+    color: '#ffffff',
+    preview: 'a² + b² = c²',
+    width: 140,
+    height: 60,
+  },
+  {
+    id: 'math-euler',
+    label: 'Euler Identity',
+    category: 'math',
+    stickerType: 'note',
+    color: '#ffffff',
+    preview: 'e^(iπ) + 1 = 0',
+    width: 150,
+    height: 60,
+  },
+  {
+    id: 'math-quad',
+    label: 'Quadratic',
+    category: 'math',
+    stickerType: 'note',
+    color: '#ffffff',
+    preview: 'x = (-b ± √Δ) / 2a',
+    width: 160,
+    height: 60,
+  },
 ];
 
 export const StickerDrawer: React.FC<StickerDrawerProps> = ({ store, isOpen, onClose }) => {
   const [activeCategory, setActiveCategory] = useState<Category>('notes');
   const [customText, setCustomText] = useState('');
   const [customColor, setCustomColor] = useState('#fef08a');
+  const [recentlyAdded, setRecentlyAdded] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const filteredStickers = STICKERS.filter((s) => s.category === activeCategory);
 
   const handleInsert = (sticker: StickerItem) => {
-    store.insertSticker(sticker.preview, sticker.color || '#fef08a');
+    store.insertSticker(
+      sticker.preview,
+      sticker.color || '#fef08a',
+      sticker.stickerType,
+      sticker.width || 140,
+      sticker.height || 140
+    );
+    setRecentlyAdded(sticker.id);
+    setTimeout(() => setRecentlyAdded(null), 1200);
   };
 
   const handleInsertCustom = (e: React.FormEvent) => {
     e.preventDefault();
     if (!customText.trim()) return;
-    store.insertSticker(customText.trim(), customColor);
+    store.insertSticker(customText.trim(), customColor, 'note', 160, 140);
     setCustomText('');
+    setRecentlyAdded('custom');
+    setTimeout(() => setRecentlyAdded(null), 1200);
   };
 
   return (
@@ -86,18 +313,18 @@ export const StickerDrawer: React.FC<StickerDrawerProps> = ({ store, isOpen, onC
         position: 'absolute',
         top: 0,
         right: 0,
-        width: 340,
+        width: 'min(360px, 94vw)',
         height: '100%',
         background: 'rgba(15, 23, 42, 0.96)',
-        backdropFilter: 'blur(16px)',
-        borderLeft: '1px solid rgba(255, 255, 255, 0.1)',
-        boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.5)',
+        backdropFilter: 'blur(20px)',
+        borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
+        boxShadow: '-8px 0 32px rgba(0, 0, 0, 0.55)',
         zIndex: 50,
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      {/* Drawer Header */}
+      {/* Header */}
       <div
         style={{
           display: 'flex',
@@ -107,21 +334,25 @@ export const StickerDrawer: React.FC<StickerDrawerProps> = ({ store, isOpen, onC
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f8fafc', fontWeight: 600 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#f8fafc', fontWeight: 700 }}>
           <Sparkles size={18} color="#eab308" />
-          <span>Elements & Stickers</span>
+          <span>Stickers & Elements</span>
         </div>
         <button
           onClick={onClose}
           style={{
-            background: 'transparent',
+            background: 'rgba(255, 255, 255, 0.08)',
             border: 'none',
+            borderRadius: 6,
             color: '#94a3b8',
             cursor: 'pointer',
-            padding: 4,
+            padding: 5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
           }}
         >
-          <X size={18} />
+          <X size={16} />
         </button>
       </div>
 
@@ -129,195 +360,202 @@ export const StickerDrawer: React.FC<StickerDrawerProps> = ({ store, isOpen, onC
       <div
         style={{
           display: 'flex',
-          padding: '8px 12px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+          background: 'rgba(30, 41, 59, 0.5)',
+          padding: '4px 8px',
           gap: 4,
-          background: 'rgba(0, 0, 0, 0.2)',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
           overflowX: 'auto',
+          scrollbarWidth: 'none',
         }}
       >
-        <CategoryTab
-          label="Notes"
-          icon={<StickyNote size={14} />}
-          active={activeCategory === 'notes'}
-          onClick={() => setActiveCategory('notes')}
-        />
-        <CategoryTab
-          label="Math"
-          icon={<Sigma size={14} />}
-          active={activeCategory === 'math'}
-          onClick={() => setActiveCategory('math')}
-        />
-        <CategoryTab
-          label="Science"
-          icon={<Atom size={14} />}
-          active={activeCategory === 'science'}
-          onClick={() => setActiveCategory('science')}
-        />
-        <CategoryTab
-          label="Flow"
-          icon={<GitFork size={14} />}
-          active={activeCategory === 'flowchart'}
-          onClick={() => setActiveCategory('flowchart')}
-        />
-        <CategoryTab
-          label="Badges"
-          icon={<Award size={14} />}
-          active={activeCategory === 'badges'}
-          onClick={() => setActiveCategory('badges')}
-        />
-      </div>
-
-      {/* Custom Note Input */}
-      <form
-        onSubmit={handleInsertCustom}
-        style={{
-          padding: '12px 16px',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-        }}
-      >
-        <input
-          type="color"
-          value={customColor}
-          onChange={(e) => setCustomColor(e.target.value)}
-          title="Custom note color"
-          style={{
-            width: 28,
-            height: 28,
-            borderRadius: 6,
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: 0,
-          }}
-        />
-        <input
-          type="text"
-          placeholder="Create custom sticker note..."
-          value={customText}
-          onChange={(e) => setCustomText(e.target.value)}
-          style={{
-            flex: 1,
-            padding: '6px 10px',
-            borderRadius: 6,
-            background: 'rgba(255, 255, 255, 0.06)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            color: '#f8fafc',
-            fontSize: 13,
-            outline: 'none',
-          }}
-        />
-        <button
-          type="submit"
-          title="Add Sticker"
-          style={{
-            background: '#3b82f6',
-            color: '#ffffff',
-            border: 'none',
-            borderRadius: 6,
-            padding: '6px 10px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          <Plus size={16} />
-        </button>
-      </form>
-
-      {/* Sticker Item Grid */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: 16,
-          display: 'grid',
-          gridTemplateColumns: 'repeat(2, 1fr)',
-          gap: 12,
-        }}
-      >
-        {filteredStickers.map((sticker) => (
-          <div
-            key={sticker.id}
-            onClick={() => handleInsert(sticker)}
+        {[
+          { id: 'notes', label: 'Sticky', icon: <StickyNote size={13} /> },
+          { id: 'emojis', label: 'Reactions', icon: <Smile size={13} /> },
+          { id: 'badges', label: 'Stamps', icon: <Award size={13} /> },
+          { id: 'diagram', label: 'Diagram', icon: <Network size={13} /> },
+          { id: 'math', label: 'Math', icon: <span style={{ fontSize: 13 }}>∑</span> },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveCategory(tab.id as Category)}
             style={{
-              padding: '12px 10px',
-              borderRadius: 8,
-              background: sticker.color ? sticker.color : 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
-              color: sticker.color ? '#1e293b' : '#f8fafc',
-              cursor: 'pointer',
+              flex: '1 0 auto',
               display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
               alignItems: 'center',
-              textAlign: 'center',
-              minHeight: 80,
-              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.2)',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px) scale(1.02)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'none';
+              justifyContent: 'center',
+              gap: 5,
+              padding: '7px 10px',
+              border: 'none',
+              borderRadius: 6,
+              background: activeCategory === tab.id ? '#3b82f6' : 'transparent',
+              color: activeCategory === tab.id ? '#ffffff' : '#94a3b8',
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.15s ease',
             }}
           >
-            <div
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                wordBreak: 'break-word',
-                fontFamily: sticker.category === 'math' ? 'serif' : 'inherit',
-              }}
-            >
-              {sticker.preview}
-            </div>
-            <div
-              style={{
-                fontSize: 10,
-                opacity: 0.7,
-                marginTop: 4,
-              }}
-            >
-              {sticker.label}
-            </div>
-          </div>
+            {tab.icon}
+            <span>{tab.label}</span>
+          </button>
         ))}
+      </div>
+
+      {/* Main Content Area */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Custom Sticky Note Composer (Only when Notes category active) */}
+        {activeCategory === 'notes' && (
+          <form
+            onSubmit={handleInsertCustom}
+            style={{
+              background: 'rgba(30, 41, 59, 0.7)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: 10,
+              padding: 12,
+            }}
+          >
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#cbd5e1', marginBottom: 8 }}>
+              Quick Custom Note
+            </div>
+            <textarea
+              rows={2}
+              placeholder="Type note content..."
+              value={customText}
+              onChange={(e) => setCustomText(e.target.value)}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                background: '#0f172a',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: 6,
+                color: '#ffffff',
+                fontSize: 13,
+                padding: '8px 10px',
+                outline: 'none',
+                resize: 'none',
+                marginBottom: 8,
+              }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {['#fef08a', '#bae6fd', '#bbf7d0', '#fbcfe8', '#e9d5ff', '#fed7aa'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setCustomColor(c)}
+                    style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 4,
+                      background: c,
+                      border: customColor === c ? '2px solid #38bdf8' : 'none',
+                      cursor: 'pointer',
+                    }}
+                  />
+                ))}
+              </div>
+              <button
+                type="submit"
+                disabled={!customText.trim()}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  background: customText.trim() ? '#3b82f6' : '#475569',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '5px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: customText.trim() ? 'pointer' : 'default',
+                }}
+              >
+                <Plus size={14} /> Add
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* Emojis Grid Layout */}
+        {activeCategory === 'emojis' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            {filteredStickers.map((sticker) => (
+              <button
+                key={sticker.id}
+                onClick={() => handleInsert(sticker)}
+                title={`Click to add ${sticker.label}`}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: 10,
+                  borderRadius: 10,
+                  background: 'rgba(30, 41, 59, 0.7)',
+                  border: recentlyAdded === sticker.id ? '2px solid #22c55e' : '1px solid rgba(255, 255, 255, 0.08)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  fontSize: 28,
+                  userSelect: 'none',
+                }}
+              >
+                <span>{sticker.preview}</span>
+                {recentlyAdded === sticker.id && (
+                  <span style={{ fontSize: 9, color: '#22c55e', fontWeight: 700, marginTop: 2 }}>Added!</span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          /* Cards Grid Layout (Sticky notes, Badges, Diagrams, Math) */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {filteredStickers.map((sticker) => (
+              <div
+                key={sticker.id}
+                onClick={() => handleInsert(sticker)}
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  padding: 12,
+                  borderRadius: 8,
+                  background: sticker.color || 'rgba(30, 41, 59, 0.8)',
+                  border: recentlyAdded === sticker.id ? '2px solid #22c55e' : '1px solid rgba(0,0,0,0.1)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                  position: 'relative',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#334155', textTransform: 'uppercase' }}>
+                    {sticker.label}
+                  </span>
+                  {recentlyAdded === sticker.id ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: '#16a34a', fontSize: 11, fontWeight: 700 }}>
+                      <Check size={12} /> Added
+                    </span>
+                  ) : (
+                    <span style={{ color: '#64748b', fontSize: 10, fontWeight: 600 }}>Click to place</span>
+                  )}
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: '#0f172a',
+                    fontWeight: 500,
+                    whiteSpace: 'pre-wrap',
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {sticker.preview}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
 };
-
-const CategoryTab: React.FC<{
-  label: string;
-  icon: React.ReactNode;
-  active: boolean;
-  onClick: () => void;
-}> = ({ label, icon, active, onClick }) => (
-  <button
-    onClick={onClick}
-    style={{
-      flex: 1,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 4,
-      padding: '6px 8px',
-      borderRadius: 6,
-      border: 'none',
-      background: active ? '#3b82f6' : 'transparent',
-      color: active ? '#ffffff' : '#94a3b8',
-      fontSize: 12,
-      fontWeight: 500,
-      cursor: 'pointer',
-      whiteSpace: 'nowrap',
-    }}
-  >
-    {icon}
-    <span>{label}</span>
-  </button>
-);

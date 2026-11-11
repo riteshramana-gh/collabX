@@ -16,7 +16,8 @@ import {
   Zap,
   Image as ImageIcon,
   Sparkles,
-  Compass,
+  Wand2,
+  Palette,
   RotateCcw,
   RotateCw,
   Trash2,
@@ -30,6 +31,7 @@ import {
   Maximize2,
   Check,
   ChevronDown,
+  Edit2,
 } from 'lucide-react';
 
 interface CanvasToolbarProps {
@@ -53,7 +55,7 @@ const STROKE_WIDTHS = [1, 2, 4, 8, 16];
 
 export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleStickers }) => {
   const [, setTick] = useState(0);
-  const [openMenu, setOpenMenu] = useState<'pen' | 'eraser' | 'shape' | 'text' | null>(null);
+  const [openMenu, setOpenMenu] = useState<'pen' | 'eraser' | 'shape' | 'text' | 'background' | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -90,6 +92,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
   return (
     <div
+      className="cb-canvas-toolbar"
       style={{
         position: 'absolute',
         top: 16,
@@ -98,13 +101,16 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         display: 'flex',
         alignItems: 'center',
         gap: 6,
-        background: 'rgba(30, 41, 59, 0.92)',
+        background: 'rgba(30, 41, 59, 0.94)',
         backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255, 255, 255, 0.12)',
+        border: '1px solid rgba(255, 255, 255, 0.14)',
         borderRadius: 14,
         padding: '6px 12px',
         boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
         zIndex: 50,
+        maxWidth: 'calc(100vw - 24px)',
+        overflowX: 'auto',
+        scrollbarWidth: 'none',
       }}
     >
       <input
@@ -318,21 +324,113 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         </button>
       )}
 
-      {/* 11. DRAFTING RULER TOGGLE */}
+      {/* 11. SMART SHAPE DETECTION TOGGLE */}
       <button
-        title="Precision Drafting Ruler"
+        title={
+          store.shapeRecognitionEnabled
+            ? '✨ Smart Shape Detection is ON (Click to Disable)'
+            : '✨ Smart Shape Detection is OFF (Click to Enable)'
+        }
         onClick={() => {
-          store.rulerActive = !store.rulerActive;
+          store.shapeRecognitionEnabled = !store.shapeRecognitionEnabled;
           setTick((v) => v + 1);
         }}
         style={{
           ...actionBtnStyle,
-          color: store.rulerActive ? '#3b82f6' : '#94a3b8',
-          background: store.rulerActive ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+          color: store.shapeRecognitionEnabled ? '#38bdf8' : '#94a3b8',
+          background: store.shapeRecognitionEnabled ? 'rgba(56, 189, 248, 0.2)' : 'transparent',
+          border: store.shapeRecognitionEnabled ? '1px solid rgba(56, 189, 248, 0.4)' : 'none',
+          padding: '0 6px',
+          width: 'auto',
+          gap: 4,
+          fontSize: 11,
+          fontWeight: 600,
         }}
       >
-        <Compass size={18} />
+        <Wand2 size={16} />
+        <span style={{ fontSize: 10 }}>{store.shapeRecognitionEnabled ? 'Shapes: ON' : 'Shapes'}</span>
       </button>
+
+      {/* 12. PAPER BACKGROUND & TEMPLATE PICKER */}
+      <div style={{ position: 'relative' }}>
+        <button
+          title="Paper Background & Template"
+          onClick={() => setOpenMenu(openMenu === 'background' ? null : 'background')}
+          style={{
+            ...actionBtnStyle,
+            color: openMenu === 'background' ? '#3b82f6' : '#94a3b8',
+            background: openMenu === 'background' ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
+            padding: '0 6px',
+            width: 'auto',
+            gap: 4,
+          }}
+        >
+          <Palette size={16} />
+          <span style={{ fontSize: 10, fontWeight: 600 }}>Paper</span>
+          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+        </button>
+
+        {openMenu === 'background' && (
+          <div style={{ ...popupMenuStyle, minWidth: 200, padding: '8px 10px' }}>
+            <div style={menuHeaderStyle}>Paper Color</div>
+            <div style={{ display: 'flex', gap: 6, margin: '6px 0 10px 0' }}>
+              {[
+                { name: 'White', color: '#ffffff' },
+                { name: 'Ivory', color: '#fef9c3' },
+                { name: 'Soft Gray', color: '#f1f5f9' },
+                { name: 'Chalkboard', color: '#164e63' },
+                { name: 'Dark Slate', color: '#1e293b' },
+              ].map((p) => {
+                const activePage = store.getActivePage();
+                const isSelected = (activePage.background_color || '#ffffff') === p.color;
+                return (
+                  <button
+                    key={p.color}
+                    title={p.name}
+                    onClick={() => {
+                      store.setPageBackground(activePage.id, p.color);
+                      setTick((v) => v + 1);
+                    }}
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      background: p.color,
+                      border: isSelected ? '2px solid #38bdf8' : '1px solid rgba(255,255,255,0.25)',
+                      cursor: 'pointer',
+                      boxShadow: isSelected ? '0 0 8px #38bdf8' : 'none',
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            <div style={menuHeaderStyle}>Paper Pattern</div>
+            {[
+              { id: 'BLANK', label: 'Plain Blank' },
+              { id: 'RULED', label: 'Ruled / Lined' },
+              { id: 'GRID', label: 'Math / Grid' },
+              { id: 'DOTTED', label: 'Dot Grid' },
+            ].map((tmpl) => {
+              const activePage = store.getActivePage();
+              const isSelected = activePage.template === tmpl.id;
+              return (
+                <button
+                  key={tmpl.id}
+                  onClick={() => {
+                    store.setPageTemplate(activePage.id, tmpl.id as any);
+                    setTick((v) => v + 1);
+                  }}
+                  style={menuItemStyle(isSelected)}
+                >
+                  <span>{tmpl.label}</span>
+                  {isSelected && <Check size={14} color="#3b82f6" />}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div style={separatorStyle} />
 
@@ -418,19 +516,94 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
       {/* UNDO & REDO */}
       <div style={{ display: 'flex', gap: 2 }}>
-        <button title="Undo (Ctrl+Z)" onClick={() => store.undo()} style={actionBtnStyle}>
+        <button
+          title="Undo (Ctrl+Z)"
+          onClick={() => store.undo()}
+          disabled={!store.canUndo()}
+          style={{
+            ...actionBtnStyle,
+            opacity: store.canUndo() ? 1 : 0.35,
+            cursor: store.canUndo() ? 'pointer' : 'not-allowed',
+          }}
+        >
           <RotateCcw size={16} />
         </button>
-        <button title="Redo (Ctrl+Y)" onClick={() => store.redo()} style={actionBtnStyle}>
+        <button
+          title="Redo (Ctrl+Y)"
+          onClick={() => store.redo()}
+          disabled={!store.canRedo()}
+          style={{
+            ...actionBtnStyle,
+            opacity: store.canRedo() ? 1 : 0.35,
+            cursor: store.canRedo() ? 'pointer' : 'not-allowed',
+          }}
+        >
           <RotateCw size={16} />
         </button>
       </div>
 
-      {/* QUICK SELECTION ACTIONS (Bring to front, Lock, Duplicate, Delete) */}
+      {/* QUICK SELECTION ACTIONS (Bring to front, Lock, Duplicate, Delete, Edit Sticky Note) */}
       {selectedId && (
         <>
           <div style={separatorStyle} />
-          <div style={{ display: 'flex', gap: 2 }}>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            {/* If sticky note or text element, show Edit Text button */}
+            {(selectedElement?.type === 'STICKER' || selectedElement?.type === 'TEXT') && (
+              <button
+                title="Edit Note Text (Prompt / Double-Click)"
+                onClick={() => {
+                  const current = selectedElement.text || '';
+                  const updated = prompt('Edit note text:', current);
+                  if (updated !== null) {
+                    store.updateElementText(selectedId, updated);
+                  }
+                }}
+                style={{
+                  ...actionBtnStyle,
+                  color: '#38bdf8',
+                  background: 'rgba(56, 189, 248, 0.2)',
+                  border: '1px solid rgba(56, 189, 248, 0.4)',
+                  gap: 4,
+                  width: 'auto',
+                  padding: '0 8px',
+                  fontSize: 11,
+                  fontWeight: 600,
+                }}
+              >
+                <Edit2 size={13} />
+                <span>Edit Text</span>
+              </button>
+            )}
+
+            {/* If STICKER, allow changing note color */}
+            {selectedElement?.type === 'STICKER' && (
+              <div style={{ display: 'flex', gap: 3, alignItems: 'center', marginRight: 4 }}>
+                {[
+                  { name: 'Yellow', fill: '#fef08a' },
+                  { name: 'Green', fill: '#bbf7d0' },
+                  { name: 'Blue', fill: '#bae6fd' },
+                  { name: 'Pink', fill: '#fbcfe8' },
+                  { name: 'Purple', fill: '#e9d5ff' },
+                  { name: 'Orange', fill: '#fed7aa' },
+                ].map((col) => (
+                  <button
+                    key={col.fill}
+                    title={`${col.name} Note`}
+                    onClick={() => store.updateElementColor(selectedId, col.fill)}
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: '50%',
+                      background: col.fill,
+                      border: selectedElement.fill_color === col.fill ? '2px solid #38bdf8' : '1px solid rgba(0,0,0,0.2)',
+                      cursor: 'pointer',
+                      padding: 0,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+
             <button
               title="Bring to Front"
               onClick={() => store.bringToFront()}
@@ -473,37 +646,38 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         </>
       )}
 
-      <div style={separatorStyle} />
-
-      {/* ZOOM CONTROLS */}
-      <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-        <button
-          title="Zoom Out"
-          onClick={() => store.setZoom(store.zoom * 0.8)}
-          style={actionBtnStyle}
-        >
-          <ZoomOut size={16} />
-        </button>
-        <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 34, textAlign: 'center' }}>
-          {Math.round(store.zoom * 100)}%
-        </span>
-        <button
-          title="Zoom In"
-          onClick={() => store.setZoom(store.zoom * 1.2)}
-          style={actionBtnStyle}
-        >
-          <ZoomIn size={16} />
-        </button>
-        <button
-          title="Reset View"
-          onClick={() => {
-            store.setPan(0, 0);
-            store.setZoom(1.0);
-          }}
-          style={actionBtnStyle}
-        >
-          <Maximize2 size={15} />
-        </button>
+      {/* ZOOM CONTROLS (Hidden on mobile to keep toolbar compact; bottom-left widget handles mobile zoom) */}
+      <div className="cb-desktop-only" style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={separatorStyle} />
+        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <button
+            title="Zoom Out"
+            onClick={() => store.setZoom(store.zoom * 0.8)}
+            style={actionBtnStyle}
+          >
+            <ZoomOut size={16} />
+          </button>
+          <span style={{ fontSize: 11, color: '#94a3b8', minWidth: 34, textAlign: 'center' }}>
+            {Math.round(store.zoom * 100)}%
+          </span>
+          <button
+            title="Zoom In"
+            onClick={() => store.setZoom(store.zoom * 1.2)}
+            style={actionBtnStyle}
+          >
+            <ZoomIn size={16} />
+          </button>
+          <button
+            title="Reset View"
+            onClick={() => {
+              store.setPan(0, 0);
+              store.setZoom(1.0);
+            }}
+            style={actionBtnStyle}
+          >
+            <Maximize2 size={15} />
+          </button>
+        </div>
       </div>
     </div>
   );

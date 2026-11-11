@@ -164,6 +164,7 @@ export const AudioRecorderBar: React.FC<AudioRecorderBarProps> = ({ store }) => 
 
   return (
     <div
+      className="cb-audio-recorder-bar"
       style={{
         display: 'flex',
         alignItems: 'center',

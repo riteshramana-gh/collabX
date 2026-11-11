@@ -501,31 +501,123 @@ export const ImageRenderer: ElementRenderer = {
   getBounds: RectangleRenderer.getBounds,
 };
 
-// 11. Sticker / Decorative Element Renderer
+// 11. Sticker / Decorative Element Renderer (Sticky notes, Emojis, Badges)
 export const StickerRenderer: ElementRenderer = {
   type: 'STICKER',
   render(ctx, element, isSelected) {
-    // If image_src exists, delegate to ImageRenderer
     if (element.image_src) {
       ImageRenderer.render(ctx, element, isSelected);
       return;
     }
 
-    // Render as decorative card / sticky note with text
-    const w = element.width || 120;
-    const h = element.height || 120;
+    const w = element.width || 140;
+    const h = element.height || 140;
 
     ctx.save();
-    ctx.fillStyle = element.fill_color || '#fef08a'; // Pastel yellow
-    ctx.shadowColor = 'rgba(0,0,0,0.2)';
-    ctx.shadowBlur = 8;
-    ctx.fillRect(element.x, element.y, w, h);
-    ctx.shadowBlur = 0;
+    if (element.rotation) {
+      const cx = element.x + w / 2;
+      const cy = element.y + h / 2;
+      ctx.translate(cx, cy);
+      ctx.rotate(element.rotation);
+      ctx.translate(-cx, -cy);
+    }
 
-    if (element.text) {
-      ctx.fillStyle = '#1e293b';
-      ctx.font = '14px Caveat, cursive, sans-serif';
-      ctx.fillText(element.text, element.x + 10, element.y + 24, w - 20);
+    if (element.sticker_type === 'emoji') {
+      // Emoji Reaction Badge
+      ctx.shadowColor = 'rgba(0,0,0,0.25)';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = element.fill_color || 'rgba(30, 41, 59, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(element.x, element.y, w, h, 20);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+
+      ctx.font = `${Math.min(w, h) * 0.55}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(element.text || '⭐', element.x + w / 2, element.y + h / 2);
+    } else if (element.sticker_type === 'badge') {
+      // Official Rubber Stamp / Badge
+      ctx.shadowColor = 'rgba(0,0,0,0.2)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = element.fill_color || '#fee2e2';
+      ctx.strokeStyle = element.stroke_color || '#dc2626';
+      ctx.lineWidth = 2.5;
+
+      ctx.beginPath();
+      ctx.roundRect(element.x, element.y, w, h, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowColor = 'transparent';
+
+      // Inner dashed border
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(element.x + 4, element.y + 4, w - 8, h - 8);
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = element.stroke_color || '#dc2626';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((element.text || 'STAMP').toUpperCase(), element.x + w / 2, element.y + h / 2);
+    } else {
+      // Real Sticky Note (with top adhesive bar & multi-line text wrapping)
+      ctx.shadowColor = 'rgba(0,0,0,0.28)';
+      ctx.shadowBlur = 14;
+      ctx.shadowOffsetY = 6;
+      ctx.fillStyle = element.fill_color || '#fef08a';
+
+      ctx.beginPath();
+      ctx.roundRect(element.x, element.y, w, h, 6);
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+
+      // Subtle top header tape strip
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
+      ctx.fillRect(element.x, element.y, w, 22);
+
+      // Multi-line word-wrapped text
+      if (element.text && element.text.trim()) {
+        ctx.fillStyle = '#0f172a';
+        ctx.font = '13px "Segoe UI", -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        const maxTextWidth = w - 24;
+        const lineHeight = 18;
+        let lineY = element.y + 30;
+
+        const rawLines = element.text.split('\n');
+        for (const rawLine of rawLines) {
+          const words = rawLine.split(' ');
+          let currentLine = '';
+
+          for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const metrics = ctx.measureText(testLine);
+            if (metrics.width > maxTextWidth && currentLine) {
+              if (lineY + lineHeight <= element.y + h - 10) {
+                ctx.fillText(currentLine, element.x + 12, lineY);
+                lineY += lineHeight;
+              }
+              currentLine = word;
+            } else {
+              currentLine = testLine;
+            }
+          }
+          if (currentLine && lineY + lineHeight <= element.y + h - 10) {
+            ctx.fillText(currentLine, element.x + 12, lineY);
+            lineY += lineHeight;
+          }
+        }
+      } else {
+        // Friendly placeholder prompting user to edit text
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+        ctx.font = 'italic 12px "Segoe UI", -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Double-click to write note...', element.x + 12, element.y + 32);
+      }
     }
 
     if (isSelected) {

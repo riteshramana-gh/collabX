@@ -24,6 +24,7 @@
 15. [Note-Synchronized Audio Recording](#15-note-synchronized-audio-recording)
 16. [Keyboard Shortcuts Quick Reference](#16-keyboard-shortcuts-quick-reference)
 17. [Workstation Organization, Permissions & Moderation](#17-workstation-organization-permissions--moderation)
+18. [Mobile & Touchscreen Responsive Workstation Layout](#18-mobile--touchscreen-responsive-workstation-layout)
 
 ---
 
@@ -38,16 +39,26 @@ Every feature adheres to three fundamental engineering invariants:
 
 ---
 
-## 2. Basic Editing Features
+## 2. Basic Editing Features & Compound Undo/Redo Engine
 
-- **Undo (`Ctrl+Z` / `Cmd+Z`)**: Reverses the most recent canvas mutation. If the element was server-persisted, a compensating inverse operation is dispatched.
-- **Redo (`Ctrl+Y` / `Cmd+Y` or `Ctrl+Shift+Z`)**: Restores an operation from the local history stack.
-- **Duplicate (`Ctrl+D` / `Cmd+D`)**: Creates an exact clone of the currently selected element, placed with a +20px offset to make newly created items immediately discernible.
-- **Delete (`Delete` / `Backspace`)**: Removes selected elements.
+CollabBoard X features an enterprise-grade transactional undo/redo architecture (`CanvasStore.ts`):
+
+- **Compound Transaction Engine (`beginTransaction()` / `endTransaction()`)**:
+  - Complex user gestures (such as continuous eraser swipes across multiple vector objects or multi-element deletions) are bundled into atomic transaction blocks (`undoStack: CanvasOperation[][]`).
+  - Pressing `Ctrl+Z` reverses the **entire user stroke or action** in a single tap instead of requiring 50+ clicks for each coordinate slice.
+- **Deep-Cloned Snapshot State**:
+  - Vector element models, polyline points arrays, and property patches are deeply cloned (`deepClone<T>()`) before committing to history.
+  - Eliminates shallow reference corruption where subsequent drawings or point updates could inadvertently mutate past history snapshots.
+- **Compensating Network Reversals**:
+  - Reversals generate compensating operations broadcast to the server, ensuring local rollbacks stay synchronized across all remote participants.
+- **Undo (`Ctrl+Z` / `Cmd+Z`)**: Reverses the most recent compound gesture or atomic canvas mutation.
+- **Redo (`Ctrl+Y` / `Cmd+Y` or `Ctrl+Shift+Z`)**: Reapplies the next compound operation from the redo stack.
+- **Duplicate (`Ctrl+D` / `Cmd+D`)**: Creates an exact clone of the selected element with an automatic +20px offset.
+- **Delete (`Delete` / `Backspace`)**: Removes selected elements in an atomic batch.
 - **Select All (`Ctrl+A` / `Cmd+A`)**: Selects all non-locked elements residing on the active notebook page.
 - **Infinite Pan & Zoom**:
   - Pan by holding `Space` or dragging with middle mouse button.
-  - Smooth zoom from 10% to 500% with the mouse wheel or the zoom controls in the floating toolbar.
+  - Smooth cursor-centered zoom from 10% to 500% via mouse wheel or the floating zoom controls.
   - Reset View button restores view to 100% zoom centered at $(0, 0)$.
 
 ---
@@ -74,7 +85,7 @@ Click the **Eraser Tool** or press `E`. Clicking the eraser icon a second time o
 
 ### 4.1 Eraser Modes
 - **Whole-Stroke Erasing (Default):** Touching any point on an inking stroke or shape instantly removes the entire element.
-- **Partial-Stroke Erasing:** Slices and trims vector polylines dynamically. Points falling within the eraser radius (which scales with the active stroke width) are excised, splitting strokes into multiple sub-segments or trimming the ends.
+- **Partial-Stroke Erasing:** Segment-based vector trimming. Points within the eraser radius are excised, and the remaining contiguous point sequences are cleanly divided into independent sub-strokes with identical styling, completely eliminating phantom connector lines.
 
 ### 4.2 Erase Highlighter Only
 When this toggle is enabled in the Eraser menu, the eraser selectively targets only elements of type `HIGHLIGHTER`. Ink handwriting, text boxes, and diagrams remain untouched, allowing you to wipe away highlight annotations without destroying notes.
@@ -110,9 +121,10 @@ Access the Shapes dropdown in the toolbar to draw:
 
 ### 7.2 Intelligent Shape Recognition
 CollabBoard X includes an integrated geometric recognizer (`ShapeRecognizer.ts`):
-1. Draw a rough hand-drawn circle, rectangle, arrow, triangle, or straight line using the regular Pen tool.
-2. Upon pointer release, the engine evaluates the polyline using the **Ramer-Douglas-Peucker (RDP)** algorithm to identify salient inflection corners, circularity ratios, and aspect proportions.
-3. If recognized as a geometric shape, the rough stroke is automatically replaced by a clean, mathematically precise vector shape!
+1. **Toggleable Control:** Smart shape recognition is **disabled by default** to preserve natural freehand sketching and handwriting. Enable it anytime using the toolbar toggle button (`[ ✨ Shapes: ON/OFF ]`).
+2. When active, draw a rough hand-drawn circle, rectangle, arrow, triangle, or straight line using the regular Pen tool.
+3. Upon pointer release, the engine evaluates the polyline using the **Ramer-Douglas-Peucker (RDP)** algorithm to identify salient inflection corners, circularity ratios, and aspect proportions.
+4. If recognized as a geometric shape, the rough stroke is automatically replaced by a clean, mathematically precise vector shape!
 
 ---
 
@@ -130,6 +142,7 @@ CollabBoard X includes an integrated geometric recognizer (`ShapeRecognizer.ts`)
 Click the **Lasso Tool** or press `L`:
 - Draw a freeform loop around any combination of ink strokes, text boxes, shapes, or images.
 - A **ray-casting point-in-polygon containment test** computes all enclosed elements and groups them into an active selection box.
+- **Instant Move Tool Switch:** Upon releasing the pointer, the app automatically switches to the Select / Move tool, allowing immediate drag repositioning, rotation, and resizing without extra toolbar clicks.
 - Drag the bounding box to move all selected objects en masse.
 - Quick action pills appear in the toolbar:
   - **Chevrons Up:** Bring selection to Front.
@@ -140,16 +153,14 @@ Click the **Lasso Tool** or press `L`:
 
 ---
 
-## 10. Multi-Page Notebook System
+## 10. Multi-Page Notebook System & Paper Themes
 
 At the bottom of the canvas, the **Page Navigation Bar** controls the document hierarchy:
 - Navigate between pages with the `<` and `>` buttons or view the current page index (`Page 1 / 4`).
-- **Add Page (`+`):** Opens a template menu to append a new page with a chosen paper style:
-  - **Ruled Paper:** Horizontal lined paper with a classic red left margin.
-  - **Math Grid:** Metric grid paper for mathematics, geometry, and plotting.
-  - **Dotted Paper:** Subtle dot matrix for bullet journaling and schematics.
-  - **Blank Paper:** Clean, unlined canvas.
-  - **PDF Background:** Custom imported document page.
+- **Paper Background & Palette Selector:** Click `[ 📄 Paper ]` in the toolbar to change the background pattern or paper shade for the current page in real time:
+  - **Patterns:** Blank (unlined), Ruled (lined paper with red margin), Math Grid, and Dotted.
+  - **Paper Colors:** White, Ivory, Slate Dark, Chalkboard, and Soft Gray (with adaptive grid/line contrast).
+- **Add Page (`+`):** Opens a template menu to append a new page with a chosen paper style.
 - **Duplicate Page:** Clones the active page along with all contained annotations and strokes.
 - **Delete Page:** Deletes the active page. The server cascades this deletion to remove all contained elements atomically.
 - **Thumbnails Drawer:** Opens a left-side drawer with live thumbnails of all notebook pages for rapid jump navigation.
@@ -164,34 +175,39 @@ Open the **Thumbnails Drawer** (grid icon in bottom bar):
 
 ---
 
-## 12. Presentation Mode & Laser Pointer
+## 12. Professional Viewport Navigation & Presentation Mode
 
-Select the **Laser Pointer Tool** in the toolbar:
-- As you draw or point on the canvas, a glowing neon pointer appears with an ephemeral comet tail that gracefully fades away after 1.2 seconds.
-- Laser movements are broadcast over peer presence channels at 40ms intervals, allowing remote attendees on the LAN to see exactly what you are emphasizing during lectures or presentations.
-
----
-
-## 13. Precision Drafting Ruler
-
-Click the **Ruler** icon (compass symbol) in the toolbar:
-- An interactive, rotatable drafting ruler appears on-screen in world coordinates.
-- Drag the ruler body to reposition it.
-- Drag the angle compass wheel to rotate the ruler to any degree angle (with a live angle degree readout).
-- While the ruler is visible, strokes drawn within 15px of the ruler edge automatically snap onto the ruler's guide line, enabling perfectly straight technical drafting lines.
+- **Cursor-Centered Wheel Zoom:** Zoom smoothly in and out around the exact pixel where your cursor is positioned.
+- **Touchpad Pan & Pinch Gestures:** Smooth 2-finger panning and native pinch-to-zoom (`ctrlKey`).
+- **Floating Zoom Widget:** Located in the bottom-left corner with `[ - ]`, `[ 100% ]`, `[ + ]`, and `[ ⛶ Fit to Page ]` centering.
+- **Decluttered Canvas:** The drafting ruler was eliminated to give precedence to clean, unobstructed note-taking and smart shape recognition.
+- **Laser Pointer Tool:** A glowing neon pointer with an ephemeral comet tail that gracefully fades away after 1.2 seconds, broadcast to peers over presence channels.
 
 ---
 
-## 14. Elements & Sticker Collections
+## 13. Elements & Sticker Collections with In-Place Note Editing
 
 Click the **Sparkles** icon in the toolbar to open the **Stickers & Elements Drawer**:
-Contains 5 categorized libraries of pre-rendered stamps, symbols, and notes:
-1. **Sticky Notes:** Pastel yellow, blue, green, pink, purple, and orange sticky notes.
-2. **Math & Equations:** Common formulas including $\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$, quadratic formula $x=\frac{-b\pm\sqrt{\Delta}}{2a}$, and Euler's identity $e^{i\pi}+1=0$.
-3. **Science & Engineering:** Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA double helix, resistor ($R$), capacitor ($C$), and $\text{H}_2\text{O}$.
+Features categorized visual tabs with 1-click center placement, auto-selection, and automatic switch to the Move tool:
+1. **Sticky Notes:** Pastel yellow, blue, green, pink, purple, and orange with multi-line text and adhesive strip styling.
+2. **Reaction Emojis:** Quick reaction grid (👍, ❤️, 🚀, 🔥, 💡, 🎯, 👏, 🎉, 💯, ⚠️, ❓, 🏆) for instant non-verbal feedback.
+3. **Rubber Stamps & Badges:** Official APPROVED, CONFIDENTIAL, REVIEWED, DRAFT, and URGENT stamps.
 4. **Flowcharts & Diagrams:** Start/End terminal, Process block, Decision fork, Database cylinder, and Cloud service.
-5. **Badges & Stamps:** APPROVED, URGENT, DRAFT, VERIFIED, and QUESTION badges.
-- **Custom Sticker Creator:** Choose a color and type custom text to instantly stamp a personalized sticky note onto the active page.
+5. **Math & Science:** $\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$, Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA helix, and Resistor.
+
+### 13.1 In-Place Double-Click / Tap Sticky Note Editing
+Sticky notes are fully dynamic and editable at any time after being placed onto the board:
+- **Double-Click or Double-Tap to Edit:** Double-clicking any sticky note or text box directly opens an inline editing dialog overlay with instant keyboard autofocus.
+- **Floating Canvas Badge:** When any sticky note is selected, an intuitive floating badge (`[ ✏️ Edit Note Text ]`) hovers immediately above the element for 1-click access.
+- **Toolbar Action & Pastel Color Swatches:** Selecting a sticky note displays an **`[ ✏️ Edit Text ]`** button in the floating toolbar alongside 6 instant pastel color swatches:
+  - 🟡 Canary Lemon (`#fef08a`)
+  - 🟢 Mint Green (`#bbf7d0`)
+  - 🔵 Sky Blue (`#bae6fd`)
+  - 🌸 Bubblegum Pink (`#fbcfe8`)
+  - 🟣 Soft Lavender (`#e9d5ff`)
+  - 🟠 Warm Peach (`#fed7aa`)
+- **Word Wrapping & Empty State Guidance:** Sticky note text automatically wraps with generous padding. Empty sticky notes display a soft italic placeholder (`(Double-click to write note...)`), making collaboration obvious to first-time users.
+- **Keyboard Shortcuts:** Press `Enter` to save changes immediately, `Shift + Enter` for a new line, or `Escape` to cancel.
 
 ---
 
@@ -233,10 +249,10 @@ Located at the top right of the room interface:
 
 CollabBoard X delivers an uncluttered, modern workstation layout designed for classrooms, engineering reviews, and multi-user brainstorms:
 
-### 17.1 Three Dedicated Workstation Tabs
-- **`🎨 Whiteboard & Notebook`**: Clean, edge-to-edge drawing viewport with the GoodNotes floating toolbar, bottom page navigation bar, and top-right audio recording bar. Canvas state and zoom level are continuously preserved in memory when switching tabs.
+### 17.1 Specialized Workstation Tabs & Docked Side Chat
+- **`🎨 Whiteboard & Notebook`**: Clean, edge-to-edge drawing viewport with the GoodNotes floating toolbar, bottom page navigation bar, top-right audio recording bar, and bottom-left zoom presets. Canvas state and zoom level are continuously preserved in memory when switching tabs.
 - **`👥 Meeting & Controls`**: Dedicated full-page administration center with the Master Board Access card, participants permission matrix (`HOST`, `EDITOR`, `VIEWER`), individual pointer visibility toggles, voice muting controls, and snapshot backup tools.
-- **`💬 Chat`**: Spacious room discussion stream with participant avatars, timestamps, and header notification badges.
+- **`💬 Docked Whiteboard Chat (Side Panel)`**: Slide-out chat drawer directly accessible over the whiteboard with granular audience targeting (`👥 Everyone`, `👑 Room Host Private`, or `🔒 Particular Participant Direct 1-on-1`). Unread notification count badges appear on the header chat toggle button.
 
 ### 17.2 Pixel-Exact Drawing Coordinates
 The canvas engine calculates drawing coordinates using `clientX - rect.left` and `clientY - rect.top` relative to the bounding box of the HTML `<canvas>` element. This guarantees that pen strokes, highlighters, shapes, and eraser paths match the physical cursor tip with zero offset or drift across any screen resolution and zoom level.
@@ -253,3 +269,25 @@ In collaborative sessions with 10+ participants, broadcasting everyone's cursor 
 - **Host Cursor (`👑 Host`)**: Always broadcast and highlighted with a golden crown badge.
 - **Viewer Suppression**: Users in `VIEWER` mode never broadcast pointers.
 - **Pointer Request**: Non-host editors can click **`[Share Pointer]`** in the top header. The Host receives an interactive header notification pill (`[Allow] / [Deny]`). Only approved pointers are visible to the room.
+
+---
+
+## 18. Mobile & Touchscreen Responsive Workstation Layout
+
+CollabBoard X includes first-class responsive styling tailored for smartphones (iPhone, Android) and tablets (iPad, Galaxy Tab):
+
+### 18.1 Header Auto-Compaction (< 768px Screens)
+- **Brand Title Truncation:** On narrow screens, verbose labels (`CollabBoard`, `Room:`, participant usernames, and role text strings) are automatically hidden, leaving prominent icon badges (`👑`, `👁️`, `✏️`).
+- **One-Tap Action Triggers:** Quick Mic toggle, Share Pointer, QR Code, and Chat Drawer buttons remain immediately reachable as streamlined 34px touch icons with zero horizontal page blowout.
+
+### 18.2 Floating GoodNotes Toolbar Mobile Docking
+- Toolbar width automatically constrains to `max-width: calc(100vw - 16px)` with silent horizontal touch scrolling.
+- Redundant desktop zoom buttons are hidden in the top toolbar to preserve screen real estate, delegating zoom to the dedicated bottom-left touch widget.
+
+### 18.3 Non-Colliding Audio & Navigation Widgets
+- **Audio Recorder Bar:** On mobile, shifts dynamically to `top: 58px; right: 8px` with a compact $0.9\times$ scaling factor, completely clearing the top-centered floating drawing toolbar.
+- **Page Navigation Bar:** Automatically re-anchors to the bottom-right corner (`bottom: 12px; right: 8px`), fully separating from the bottom-left zoom widget (`bottom: 12px; left: 8px`) and eliminating touch overlap.
+
+### 18.4 Touch & Stylus Optimization
+- Native touch event prevention eliminates accidental page scrolling or elastic bounce when drawing with a finger or Apple Pencil / stylus.
+- Double-tap gesture support enables effortless in-place editing of sticky notes and text annotations on touchscreens.

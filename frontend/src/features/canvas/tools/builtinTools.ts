@@ -101,15 +101,8 @@ export const PencilTool: CanvasTool = {
   cursor: 'crosshair',
   onPointerDown(ctx: CanvasToolContext, point: Point, event: PointerEvent) {
     const id = createId();
-    let ptX = point.x;
-    let ptY = point.y;
-
-    // Optional Ruler Snapping
-    if (ctx.rulerActive && ctx.rulerY !== undefined) {
-      if (Math.abs(ptY - ctx.rulerY) < 20) {
-        ptY = ctx.rulerY;
-      }
-    }
+    const ptX = point.x;
+    const ptY = point.y;
 
     const pressure = event.pressure > 0 ? event.pressure : 0.8;
     const elem: CanvasElement = {
@@ -136,14 +129,8 @@ export const PencilTool: CanvasTool = {
   onPointerMove(ctx: CanvasToolContext, point: Point, event: PointerEvent) {
     const curr = (this as any)._current as CanvasElement;
     if (curr && curr.points) {
-      let ptX = point.x;
-      let ptY = point.y;
-
-      if (ctx.rulerActive && ctx.rulerY !== undefined) {
-        if (Math.abs(ptY - ctx.rulerY) < 20) {
-          ptY = ctx.rulerY;
-        }
-      }
+      const ptX = point.x;
+      const ptY = point.y;
 
       // Calculate dynamic pressure/velocity for fountain/brush pen
       let pressure = event.pressure;
@@ -282,7 +269,7 @@ function eraseAtPoint(ctx: CanvasToolContext, point: Point) {
     (el) => el.page_id === ctx.activePageId
   );
 
-  const eraserRadius = Math.max(12, ctx.activeStrokeWidth * 2);
+  const eraserRadius = Math.max(14, ctx.activeStrokeWidth * 2.5);
 
   for (const elem of pageElements) {
     if (elem.is_locked) continue; // Locked elements cannot be erased
@@ -292,32 +279,85 @@ function eraseAtPoint(ctx: CanvasToolContext, point: Point) {
       continue;
     }
 
-    if (RendererRegistry.hitTest(elem, point)) {
-      if (ctx.eraserMode === 'whole' || elem.type !== 'PENCIL') {
-        // Whole-stroke: Delete entire element
+    if (!RendererRegistry.hitTest(elem, point)) {
+      continue;
+    }
+
+    if (
+      ctx.eraserMode === 'whole' ||
+      (elem.type !== 'PENCIL' && elem.type !== 'HIGHLIGHTER') ||
+      !elem.points ||
+      elem.points.length <= 3
+    ) {
+      // Whole-stroke: Delete entire element
+      ctx.commitOperation({
+        client_op_id: createId(),
+        op_type: 'DELETE',
+        element_id: elem.id,
+      });
+    } else {
+      // Partial-stroke erasing on polylines (Pencil & Highlighter):
+      // Group contiguous points strictly outside the eraser radius into distinct segments
+      const segments: [number, number][][] = [];
+      let currentSegment: [number, number][] = [];
+
+      for (const [px, py] of elem.points) {
+        const dist = Math.hypot(px - point.x, py - point.y);
+        if (dist > eraserRadius) {
+          currentSegment.push([px, py]);
+        } else {
+          if (currentSegment.length >= 2) {
+            segments.push(currentSegment);
+          }
+          currentSegment = [];
+        }
+      }
+      if (currentSegment.length >= 2) {
+        segments.push(currentSegment);
+      }
+
+      if (segments.length === 0) {
+        // Completely erased
         ctx.commitOperation({
           client_op_id: createId(),
           op_type: 'DELETE',
           element_id: elem.id,
         });
-      } else if (elem.points && elem.points.length > 4) {
-        // Partial-stroke erasing: Split polyline or trim erased points
-        const remainingPts = elem.points.filter(
-          ([px, py]) => Math.hypot(px - point.x, py - point.y) > eraserRadius
-        );
+      } else if (segments.length === 1) {
+        // Trimmed at one end
+        ctx.commitOperation({
+          client_op_id: createId(),
+          op_type: 'UPDATE',
+          element_id: elem.id,
+          patch: { points: segments[0] },
+        });
+      } else {
+        // Split into 2 or more separate natural strokes!
+        // 1. Update existing element with first segment
+        ctx.commitOperation({
+          client_op_id: createId(),
+          op_type: 'UPDATE',
+          element_id: elem.id,
+          patch: { points: segments[0] },
+        });
 
-        if (remainingPts.length <= 2) {
+        // 2. Add remaining segments as independent elements with identical styles
+        for (let i = 1; i < segments.length; i++) {
+          const splitElem: CanvasElement = {
+            ...elem,
+            id: createId(),
+            points: segments[i],
+            x: segments[i][0][0],
+            y: segments[i][0][1],
+            created_by: ctx.currentUserId,
+            last_modified_by: ctx.currentUserId,
+            last_modified_at: Date.now(),
+            version: 1,
+          };
           ctx.commitOperation({
             client_op_id: createId(),
-            op_type: 'DELETE',
-            element_id: elem.id,
-          });
-        } else {
-          ctx.commitOperation({
-            client_op_id: createId(),
-            op_type: 'UPDATE',
-            element_id: elem.id,
-            patch: { points: remainingPts },
+            op_type: 'ADD',
+            element: splitElem,
           });
         }
       }
@@ -344,6 +384,7 @@ export const EraserTool: CanvasTool = {
   cursor: 'crosshair',
   onPointerDown(ctx: CanvasToolContext, point: Point) {
     (this as any)._isErasing = true;
+    ctx.beginTransaction?.();
     eraseAtPoint(ctx, point);
   },
   onPointerMove(ctx: CanvasToolContext, point: Point) {
@@ -351,8 +392,11 @@ export const EraserTool: CanvasTool = {
       eraseAtPoint(ctx, point);
     }
   },
-  onPointerUp() {
-    (this as any)._isErasing = false;
+  onPointerUp(ctx: CanvasToolContext) {
+    if ((this as any)._isErasing) {
+      (this as any)._isErasing = false;
+      ctx.endTransaction?.();
+    }
   },
 };
 
@@ -407,6 +451,10 @@ export const LassoTool: CanvasTool = {
       ctx.setSelectedElementIds(selectedIds);
       if (selectedIds.size > 0) {
         ctx.setSelectedElementId(Array.from(selectedIds)[0]);
+        // Automatically switch to Select / Move tool so user can transform lassoed elements right away!
+        if (ctx.setActiveToolId) {
+          ctx.setActiveToolId('select');
+        }
       }
     }
     (this as any)._lassoPoints = null;

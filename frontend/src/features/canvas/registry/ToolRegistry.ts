@@ -24,9 +24,12 @@ export interface CanvasToolContext {
   selectedElementIds: Set<string>;
   currentUserId: string;
   commitOperation: (op: CanvasOperation) => void;
+  beginTransaction?: () => void;
+  endTransaction?: () => void;
   setPreviewElement: (element: CanvasElement | null) => void;
   setSelectedElementId: (id: string | null) => void;
   setSelectedElementIds: (ids: Set<string>) => void;
+  setActiveToolId?: (id: string) => void;
   panX: number;
   panY: number;
   zoom: number;

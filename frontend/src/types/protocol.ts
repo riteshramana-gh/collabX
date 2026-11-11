@@ -57,6 +57,7 @@ export interface CanvasElement {
   text_align?: 'left' | 'center' | 'right';
   image_src?: string; // Base64 data URL
   polygon_sides?: number; // Vertices for triangle, polygon, star
+  sticker_type?: string; // Type of sticker/stamp/badge
   is_locked?: boolean;
   z_index: number;
   version: number;

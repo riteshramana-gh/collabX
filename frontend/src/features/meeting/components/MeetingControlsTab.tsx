@@ -238,6 +238,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
 
   return (
     <div
+      className="cb-meeting-container"
       style={{
         width: '100%',
         height: 'calc(100vh - 52px)',
@@ -248,9 +249,33 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
         boxSizing: 'border-box',
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .cb-meeting-container {
+            padding: 12px 10px !important;
+          }
+          .cb-meeting-header-banner {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
+            padding: 12px 14px !important;
+          }
+          .cb-board-access-banner {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 12px !important;
+            padding: 12px 14px !important;
+          }
+          .cb-meeting-grid {
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+          }
+        }
+      `}</style>
       <div style={{ maxWidth: 1080, margin: '0 auto' }}>
         {/* Top Header Banner */}
         <div
+          className="cb-meeting-header-banner"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -318,6 +343,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
 
         {/* Master Board Access Governance Banner */}
         <div
+          className="cb-board-access-banner"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -410,7 +436,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
         </div>
 
         {/* 2-Column Grid Layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24 }}>
+        <div className="cb-meeting-grid" style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: 24 }}>
           {/* Column 1: Participants & Permissions Control Center */}
           <div
             style={{

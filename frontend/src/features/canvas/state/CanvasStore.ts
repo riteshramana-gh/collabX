@@ -7,12 +7,22 @@ function createId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 10);
 }
 
+function deepClone<T>(obj: T): T {
+  if (obj === undefined || obj === null) return obj;
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch {
+    return { ...obj };
+  }
+}
+
 export class CanvasStore {
   private elements = new Map<string, CanvasElement>();
   private pages = new Map<string, NotebookPage>();
   private pendingOps = new Map<string, CanvasOperation>();
-  private undoStack: CanvasOperation[] = [];
-  private redoStack: CanvasOperation[] = [];
+  private undoStack: CanvasOperation[][] = [];
+  private redoStack: CanvasOperation[][] = [];
+  private activeTransaction: CanvasOperation[] | null = null;
 
   // Active Notebook Page
   public activePageId = 'page-1';
@@ -37,7 +47,7 @@ export class CanvasStore {
   // Eraser & Shape Recognition Options
   public eraserMode: 'whole' | 'partial' = 'whole';
   public eraseHighlighterOnly = false;
-  public shapeRecognitionEnabled = true;
+  public shapeRecognitionEnabled = false;
 
   // Selection & Transform State
   public selectedElementId: string | null = null;
@@ -170,40 +180,24 @@ export class CanvasStore {
     });
   }
 
-  public commitOperation(op: CanvasOperation) {
-    // 1. Optimistic local apply
+  private applyLocalAndSend(op: CanvasOperation) {
     if (op.op_type === 'ADD' && op.element) {
       this.elements.set(op.element.id, op.element);
-      this.undoStack.push({
-        client_op_id: op.client_op_id,
-        op_type: 'DELETE',
-        element_id: op.element.id,
-      });
     } else if (op.op_type === 'UPDATE' && op.element_id && op.patch) {
       const prev = this.elements.get(op.element_id);
       if (prev) {
-        const inversePatch: Partial<CanvasElement> = {};
-        for (const k of Object.keys(op.patch)) {
-          (inversePatch as any)[k] = (prev as any)[k];
-        }
-        this.undoStack.push({
-          client_op_id: op.client_op_id,
-          op_type: 'UPDATE',
-          element_id: op.element_id,
-          patch: inversePatch,
-        });
         this.elements.set(op.element_id, { ...prev, ...op.patch });
       }
     } else if (op.op_type === 'DELETE' && op.element_id) {
-      const prev = this.elements.get(op.element_id);
-      if (prev) {
-        this.undoStack.push({
-          client_op_id: op.client_op_id,
-          op_type: 'ADD',
-          element: prev,
-        });
-        this.elements.delete(op.element_id);
+      this.elements.delete(op.element_id);
+      if (this.selectedElementId === op.element_id) {
+        this.selectedElementId = null;
       }
+      this.selectedElementIds.delete(op.element_id);
+    } else if (op.op_type === 'CLEAR') {
+      this.elements.clear();
+      this.selectedElementId = null;
+      this.selectedElementIds.clear();
     } else if (op.op_type === 'PAGE_CREATE' && op.page) {
       this.pages.set(op.page.id, op.page);
     } else if (op.op_type === 'PAGE_UPDATE' && op.page) {
@@ -212,26 +206,224 @@ export class CanvasStore {
       this.pages.delete(op.element_id);
     }
 
-    this.redoStack = [];
     this.pendingOps.set(op.client_op_id, op);
     this.notify();
-
-    // 2. Dispatch to server
     this.conn.send('CANVAS_OP_REQ', op);
   }
 
+  public beginTransaction() {
+    this.activeTransaction = [];
+  }
+
+  public endTransaction() {
+    if (this.activeTransaction && this.activeTransaction.length > 0) {
+      this.undoStack.push(this.activeTransaction);
+      this.redoStack = [];
+      this.notify();
+    }
+    this.activeTransaction = null;
+  }
+
+  public commitOperation(op: CanvasOperation) {
+    let inverseOp: CanvasOperation | null = null;
+
+    if (op.op_type === 'ADD' && op.element) {
+      inverseOp = {
+        client_op_id: createId(),
+        op_type: 'DELETE',
+        element_id: op.element.id,
+      };
+    } else if (op.op_type === 'UPDATE' && op.element_id && op.patch) {
+      const prev = this.elements.get(op.element_id);
+      if (prev) {
+        const inversePatch: Partial<CanvasElement> = {};
+        for (const k of Object.keys(op.patch)) {
+          (inversePatch as any)[k] = deepClone((prev as any)[k]);
+        }
+        inverseOp = {
+          client_op_id: createId(),
+          op_type: 'UPDATE',
+          element_id: op.element_id,
+          patch: inversePatch,
+        };
+      }
+    } else if (op.op_type === 'DELETE' && op.element_id) {
+      const prev = this.elements.get(op.element_id);
+      if (prev) {
+        inverseOp = {
+          client_op_id: createId(),
+          op_type: 'ADD',
+          element: deepClone(prev),
+        };
+      }
+    }
+
+    if (inverseOp) {
+      if (this.activeTransaction) {
+        this.activeTransaction.push(inverseOp);
+      } else {
+        this.undoStack.push([inverseOp]);
+        this.redoStack = [];
+      }
+    }
+
+    this.applyLocalAndSend(op);
+  }
+
+  public canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  public canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
+
   public undo() {
-    const op = this.undoStack.pop();
-    if (!op) return;
-    const redoOp = { ...op };
-    this.redoStack.push(redoOp);
-    this.commitOperation(op);
+    const step = this.undoStack.pop();
+    if (!step || step.length === 0) return;
+
+    const forwardStep: CanvasOperation[] = [];
+
+    // Process operations in reverse order for accurate sequence reversal
+    for (let i = step.length - 1; i >= 0; i--) {
+      const invOp = step[i];
+
+      if (invOp.op_type === 'DELETE' && invOp.element_id) {
+        const current = this.elements.get(invOp.element_id);
+        if (current) {
+          forwardStep.push({
+            client_op_id: createId(),
+            op_type: 'ADD',
+            element: deepClone(current),
+          });
+        }
+      } else if (invOp.op_type === 'ADD' && invOp.element) {
+        forwardStep.push({
+          client_op_id: createId(),
+          op_type: 'DELETE',
+          element_id: invOp.element.id,
+        });
+      } else if (invOp.op_type === 'UPDATE' && invOp.element_id && invOp.patch) {
+        const current = this.elements.get(invOp.element_id);
+        if (current) {
+          const forwardPatch: Partial<CanvasElement> = {};
+          for (const k of Object.keys(invOp.patch)) {
+            (forwardPatch as any)[k] = deepClone((current as any)[k]);
+          }
+          forwardStep.push({
+            client_op_id: createId(),
+            op_type: 'UPDATE',
+            element_id: invOp.element_id,
+            patch: forwardPatch,
+          });
+        }
+      }
+
+      this.applyLocalAndSend(invOp);
+    }
+
+    if (forwardStep.length > 0) {
+      this.redoStack.push(forwardStep);
+    }
+    this.notify();
   }
 
   public redo() {
-    const op = this.redoStack.pop();
-    if (!op) return;
-    this.commitOperation(op);
+    const step = this.redoStack.pop();
+    if (!step || step.length === 0) return;
+
+    const inverseStep: CanvasOperation[] = [];
+
+    for (let i = step.length - 1; i >= 0; i--) {
+      const redoOp = step[i];
+
+      if (redoOp.op_type === 'ADD' && redoOp.element) {
+        inverseStep.push({
+          client_op_id: createId(),
+          op_type: 'DELETE',
+          element_id: redoOp.element.id,
+        });
+      } else if (redoOp.op_type === 'DELETE' && redoOp.element_id) {
+        const current = this.elements.get(redoOp.element_id);
+        if (current) {
+          inverseStep.push({
+            client_op_id: createId(),
+            op_type: 'ADD',
+            element: deepClone(current),
+          });
+        }
+      } else if (redoOp.op_type === 'UPDATE' && redoOp.element_id && redoOp.patch) {
+        const current = this.elements.get(redoOp.element_id);
+        if (current) {
+          const inversePatch: Partial<CanvasElement> = {};
+          for (const k of Object.keys(redoOp.patch)) {
+            (inversePatch as any)[k] = deepClone((current as any)[k]);
+          }
+          inverseStep.push({
+            client_op_id: createId(),
+            op_type: 'UPDATE',
+            element_id: redoOp.element_id,
+            patch: inversePatch,
+          });
+        }
+      }
+
+      this.applyLocalAndSend(redoOp);
+    }
+
+    if (inverseStep.length > 0) {
+      this.undoStack.push(inverseStep);
+    }
+    this.notify();
+  }
+
+  public updateElementText(elementId: string, newText: string) {
+    const el = this.elements.get(elementId);
+    if (!el) return;
+    this.commitOperation({
+      client_op_id: createId(),
+      op_type: 'UPDATE',
+      element_id: elementId,
+      patch: { text: newText },
+    });
+  }
+
+  public updateElementColor(elementId: string, fillColor: string, strokeColor?: string) {
+    const el = this.elements.get(elementId);
+    if (!el) return;
+    const patch: Partial<CanvasElement> = { fill_color: fillColor };
+    if (strokeColor) {
+      patch.stroke_color = strokeColor;
+    }
+    this.commitOperation({
+      client_op_id: createId(),
+      op_type: 'UPDATE',
+      element_id: elementId,
+      patch,
+    });
+  }
+
+  public setZoomAndPan(zoom: number, panX: number, panY: number) {
+    this.zoom = Math.max(0.1, Math.min(5.0, zoom));
+    this.panX = panX;
+    this.panY = panY;
+    this.notify();
+  }
+
+  public setPageBackground(pageId: string, background_color: string, template?: PageTemplate) {
+    const page = this.pages.get(pageId);
+    if (page) {
+      const updated: NotebookPage = {
+        ...page,
+        background_color,
+        ...(template ? { template } : {}),
+      };
+      this.commitOperation({
+        client_op_id: createId(),
+        op_type: 'PAGE_UPDATE',
+        page: updated,
+      });
+    }
   }
 
   // --- Multi-Page Notebook Actions ---
@@ -446,7 +638,13 @@ export class CanvasStore {
     this.selectedElementId = elem.id;
   }
 
-  public insertSticker(text: string, fillColor: string = '#fef08a') {
+  public insertSticker(
+    text: string,
+    fillColor: string = '#fef08a',
+    stickerType?: string,
+    width: number = 140,
+    height: number = 140
+  ) {
     const centerWorldX = (-this.panX + window.innerWidth / 2) / this.zoom;
     const centerWorldY = (-this.panY + window.innerHeight / 2) / this.zoom;
 
@@ -454,10 +652,11 @@ export class CanvasStore {
       id: createId(),
       page_id: this.activePageId,
       type: 'STICKER',
-      x: centerWorldX - 70,
-      y: centerWorldY - 70,
-      width: 140,
-      height: 140,
+      sticker_type: stickerType,
+      x: centerWorldX - width / 2,
+      y: centerWorldY - height / 2,
+      width,
+      height,
       text,
       fill_color: fillColor,
       stroke_color: '#d97706',
@@ -474,6 +673,9 @@ export class CanvasStore {
       element: elem,
     });
     this.selectedElementId = elem.id;
+    this.selectedElementIds = new Set([elem.id]);
+    this.activeToolId = 'select'; // Automatically switch to Move / Select tool
+    this.notify();
   }
 
   // --- Laser Pointer ---
@@ -510,24 +712,25 @@ export class CanvasStore {
   }
 
   public deleteSelected() {
+    const toDelete: string[] = [];
     if (this.selectedElementIds.size > 0) {
-      for (const eid of this.selectedElementIds) {
-        this.commitOperation({
-          client_op_id: createId(),
-          op_type: 'DELETE',
-          element_id: eid,
-        });
-      }
-      this.selectedElementIds.clear();
-      this.selectedElementId = null;
+      toDelete.push(...Array.from(this.selectedElementIds));
     } else if (this.selectedElementId) {
+      toDelete.push(this.selectedElementId);
+    }
+    if (toDelete.length === 0) return;
+
+    this.beginTransaction();
+    for (const eid of toDelete) {
       this.commitOperation({
         client_op_id: createId(),
         op_type: 'DELETE',
-        element_id: this.selectedElementId,
+        element_id: eid,
       });
-      this.selectedElementId = null;
     }
+    this.endTransaction();
+    this.selectedElementIds.clear();
+    this.selectedElementId = null;
   }
 
   public setPreviewElement(elem: CanvasElement | null) {

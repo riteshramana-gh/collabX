@@ -43,6 +43,9 @@ class ChatFeatureModule(FeatureModule):
             return
 
         sender_name = envelope.payload.get("sender_name") or session.display_name or "Anonymous"
+        target_type = envelope.payload.get("target_type", "EVERYONE")
+        target_session_id = envelope.payload.get("target_session_id")
+        target_name = envelope.payload.get("target_name")
 
         # Ensure room exists and obtain current room sequence
         room_actor = await self.context.room_manager.get_or_create_room(room_id)
@@ -56,16 +59,37 @@ class ChatFeatureModule(FeatureModule):
             sender_name=sender_name,
             content=content,
         )
+        msg_record["target_type"] = target_type
+        msg_record["target_session_id"] = target_session_id
+        msg_record["target_name"] = target_name
 
-        # Broadcast to all room members
-        broadcast_envelope = MessageEnvelope(
+        chat_envelope = MessageEnvelope(
             room_id=room_id,
             sender_id=session.session_id,
             type="CHAT_MSG_BROADCAST",
             server_seq=current_seq,
             payload=msg_record,
         )
-        await self.context.connection_manager.broadcast_to_room(room_id, broadcast_envelope)
+
+        room_sessions = await self.context.connection_manager.get_room_sessions(room_id)
+
+        if target_type == "HOST_ONLY":
+            # Direct private message to Room Host
+            host_sessions = [s for s in room_sessions if getattr(s, "role", "EDITOR") == "HOST"]
+            for h in host_sessions:
+                await h.send_envelope(chat_envelope)
+            if session not in host_sessions:
+                await session.send_envelope(chat_envelope)
+        elif target_type == "DIRECT" and target_session_id:
+            # Direct 1-on-1 private message to specified participant
+            target_sess = next((s for s in room_sessions if s.session_id == target_session_id), None)
+            if target_sess:
+                await target_sess.send_envelope(chat_envelope)
+            if session != target_sess:
+                await session.send_envelope(chat_envelope)
+        else:
+            # Public message broadcast to all room members
+            await self.context.connection_manager.broadcast_to_room(room_id, chat_envelope)
 
     async def handle_chat_history(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         room_id = envelope.room_id
