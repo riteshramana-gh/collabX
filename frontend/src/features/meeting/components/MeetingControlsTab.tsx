@@ -5,7 +5,6 @@ import { CanvasStore } from '../../canvas/state/CanvasStore';
 import { WebRTCVoiceMesh } from '../../voice/rtc/WebRTCVoiceMesh';
 import { RoomParticipant } from '../../../types/protocol';
 import {
-  Shield,
   Lock,
   Unlock,
   Download,
@@ -26,6 +25,13 @@ import {
   Radio,
   ArrowRight,
   MousePointer2,
+  FolderClock,
+  Save,
+  RefreshCw,
+  Trash2,
+  AlertCircle,
+  CheckCircle2,
+  History,
 } from 'lucide-react';
 
 interface MeetingControlsTabProps {
@@ -66,6 +72,27 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [, setTick] = useState(0);
+
+  // Version Control State
+  const [savedVersions, setSavedVersions] = useState<Array<{
+    id: string;
+    version_name: string;
+    elements_count: number;
+    pages_count: number;
+    created_at: number | string;
+    updated_at: number | string;
+    owner_username?: string;
+    room_id?: string;
+  }>>([]);
+  const [versionCount, setVersionCount] = useState<number>(0);
+  const [maxVersions, setMaxVersions] = useState<number>(3);
+  const [newVersionName, setNewVersionName] = useState<string>('');
+  const [isSavingVersion, setIsSavingVersion] = useState<boolean>(false);
+  const [isRestoringVersionId, setIsRestoringVersionId] = useState<string | null>(null);
+  const [isDeletingVersionId, setIsDeletingVersionId] = useState<string | null>(null);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [versionSuccessMsg, setVersionSuccessMsg] = useState<string | null>(null);
+  const [replaceVersionId, setReplaceVersionId] = useState<string>('');
 
   // Format Share URL
   const host = serverAddress.startsWith('http') ? serverAddress : `http://${serverAddress}`;
@@ -161,6 +188,68 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       }
     });
 
+    // Version Control Network Listeners
+    conn.send('NOTEBOOK_VERSION_LIST_REQ', {});
+
+    const unsubVersionList = conn.on('NOTEBOOK_VERSION_LIST_RES', (envelope) => {
+      const versions = envelope.payload?.versions || [];
+      setSavedVersions(versions);
+      setVersionCount(envelope.payload?.current_count ?? versions.length);
+      setMaxVersions(envelope.payload?.max_allowed ?? 3);
+    });
+
+    const unsubVersionSave = conn.on('NOTEBOOK_VERSION_SAVE_RES', (envelope) => {
+      setIsSavingVersion(false);
+      if (envelope.payload?.success) {
+        const ver = envelope.payload?.version;
+        const name = ver?.version_name || 'Notebook';
+        setVersionSuccessMsg(`Notebook "${name}" saved to server!`);
+        setNewVersionName('');
+        setReplaceVersionId('');
+        setVersionError(null);
+        if (envelope.payload?.versions) {
+          setSavedVersions(envelope.payload.versions);
+          setVersionCount(envelope.payload.current_count ?? envelope.payload.versions.length);
+        } else {
+          conn.send('NOTEBOOK_VERSION_LIST_REQ', {});
+        }
+        setTimeout(() => setVersionSuccessMsg(null), 4000);
+      } else {
+        setVersionError(envelope.payload?.message || envelope.payload?.error || 'Failed to save notebook version');
+      }
+    });
+
+    const unsubVersionRestore = conn.on('NOTEBOOK_VERSION_RESTORE_RES', (envelope) => {
+      setIsRestoringVersionId(null);
+      if (envelope.payload?.success) {
+        setVersionSuccessMsg(`Whiteboard restored to "${envelope.payload?.version_name || 'selected version'}"!`);
+        setVersionError(null);
+        setTimeout(() => setVersionSuccessMsg(null), 4000);
+      } else {
+        setVersionError(envelope.payload?.message || envelope.payload?.error || 'Failed to restore version');
+      }
+    });
+
+    const unsubVersionRestoredNotif = conn.on('NOTEBOOK_VERSION_RESTORED_NOTIFICATION', (envelope) => {
+      const { version_name, restored_by } = envelope.payload || {};
+      setVersionSuccessMsg(`Notebook restored to "${version_name}" by ${restored_by || 'host'}.`);
+      setTimeout(() => setVersionSuccessMsg(null), 4000);
+    });
+
+    const unsubVersionDelete = conn.on('NOTEBOOK_VERSION_DELETE_RES', (envelope) => {
+      setIsDeletingVersionId(null);
+      if (envelope.payload?.success) {
+        const remaining = envelope.payload.versions || [];
+        setSavedVersions(remaining);
+        setVersionCount(envelope.payload.current_count ?? remaining.length);
+        setVersionSuccessMsg('Notebook version deleted successfully.');
+        setVersionError(null);
+        setTimeout(() => setVersionSuccessMsg(null), 3000);
+      } else {
+        setVersionError(envelope.payload?.message || envelope.payload?.error || 'Failed to delete version');
+      }
+    });
+
     return () => {
       clearInterval(interval);
       unsubRoster();
@@ -169,8 +258,48 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       unsubRoleChanged();
       unsubMuted();
       unsubExport();
+      unsubVersionList();
+      unsubVersionSave();
+      unsubVersionRestore();
+      unsubVersionRestoredNotif();
+      unsubVersionDelete();
     };
   }, [conn, roomId, currentUserId, voiceMesh]);
+
+  const handleSaveVersion = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const defaultName = `Notebook v${savedVersions.length + 1} (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
+    const nameToSave = newVersionName.trim() || defaultName;
+
+    if (versionCount >= maxVersions && !replaceVersionId) {
+      setVersionError(`Maximum limit of ${maxVersions} notebooks reached. Select a notebook to overwrite or delete one first.`);
+      return;
+    }
+
+    setIsSavingVersion(true);
+    setVersionError(null);
+    setVersionSuccessMsg(null);
+    conn.send('NOTEBOOK_VERSION_SAVE_REQ', {
+      version_name: nameToSave,
+      replace_version_id: replaceVersionId || undefined,
+    });
+  };
+
+  const handleRestoreVersion = (versionId: string, versionName: string) => {
+    if (confirm(`Restore whiteboard to "${versionName}"? Current unsaved board changes will be replaced for all participants.`)) {
+      setIsRestoringVersionId(versionId);
+      setVersionError(null);
+      conn.send('NOTEBOOK_VERSION_RESTORE_REQ', { version_id: versionId });
+    }
+  };
+
+  const handleDeleteVersion = (versionId: string, versionName: string) => {
+    if (confirm(`Permanently delete "${versionName}" from server storage? This cannot be undone.`)) {
+      setIsDeletingVersionId(versionId);
+      setVersionError(null);
+      conn.send('NOTEBOOK_VERSION_DELETE_REQ', { version_id: versionId });
+    }
+  };
 
   const handleRoleChange = (targetSessionId: string, newRole: string) => {
     conn.send('HOST_SET_USER_ROLE', {
@@ -878,27 +1007,330 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
               </div>
             </div>
 
-            {/* Room Governance Card (Host Only) */}
-            {isHost && (
-              <div
-                style={{
-                  background: 'rgba(30, 41, 59, 0.65)',
-                  backdropFilter: 'blur(16px)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  borderRadius: 16,
-                  padding: 16,
-                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
-                  <Shield size={16} color="#f59e0b" />
-                  <span>Room Security & Snapshots</span>
+            {/* Notebook Version Control & Snapshots Card */}
+            <div
+              style={{
+                background: 'rgba(30, 41, 59, 0.65)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: 16,
+                padding: 18,
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 14, fontWeight: 700 }}>
+                  <FolderClock size={17} color="#38bdf8" />
+                  <span>Notebook Version Control</span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    background: versionCount >= maxVersions ? 'rgba(239, 68, 68, 0.2)' : 'rgba(56, 189, 248, 0.15)',
+                    color: versionCount >= maxVersions ? '#f87171' : '#38bdf8',
+                    border: `1px solid ${versionCount >= maxVersions ? 'rgba(239, 68, 68, 0.3)' : 'rgba(56, 189, 248, 0.3)'}`,
+                    padding: '3px 8px',
+                    borderRadius: 14,
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  <History size={12} />
+                  <span>{versionCount} / {maxVersions} Slots Used</span>
+                </div>
+              </div>
+
+              {/* Visual 3-Slot Indicator */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 14 }}>
+                {[0, 1, 2].map((slotIdx) => {
+                  const isFilled = slotIdx < versionCount;
+                  const slotVer = savedVersions[slotIdx];
+                  return (
+                    <div
+                      key={slotIdx}
+                      style={{
+                        flex: 1,
+                        height: 5,
+                        borderRadius: 3,
+                        background: isFilled ? (versionCount >= maxVersions ? '#ef4444' : '#38bdf8') : 'rgba(255, 255, 255, 0.12)',
+                        transition: 'all 0.2s ease',
+                      }}
+                      title={isFilled ? `Slot ${slotIdx + 1}: ${slotVer?.version_name || 'Occupied'}` : `Slot ${slotIdx + 1}: Available`}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Notification Alerts */}
+              {versionSuccessMsg && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: 'rgba(34, 197, 94, 0.15)',
+                    border: '1px solid rgba(34, 197, 94, 0.3)',
+                    color: '#4ade80',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    marginBottom: 12,
+                  }}
+                >
+                  <CheckCircle2 size={15} />
+                  <span style={{ flex: 1 }}>{versionSuccessMsg}</span>
+                </div>
+              )}
+
+              {versionError && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171',
+                    padding: '8px 10px',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    marginBottom: 12,
+                  }}
+                >
+                  <AlertCircle size={15} />
+                  <span style={{ flex: 1 }}>{versionError}</span>
+                </div>
+              )}
+
+              {/* Save Version Form */}
+              <form onSubmit={handleSaveVersion} style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6, fontWeight: 600 }}>
+                  Save Active Whiteboard Version:
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: versionCount >= maxVersions ? 8 : 0 }}>
+                  <input
+                    type="text"
+                    placeholder={`e.g. Lecture Notes v${versionCount + 1}`}
+                    value={newVersionName}
+                    onChange={(e) => setNewVersionName(e.target.value)}
+                    maxLength={40}
+                    style={{
+                      flex: 1,
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      color: '#ffffff',
+                      fontSize: 12,
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSavingVersion || (versionCount >= maxVersions && !replaceVersionId)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      background: versionCount >= maxVersions && !replaceVersionId ? 'rgba(255, 255, 255, 0.1)' : '#38bdf8',
+                      color: versionCount >= maxVersions && !replaceVersionId ? '#64748b' : '#0f172a',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: versionCount >= maxVersions && !replaceVersionId ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <Save size={13} />
+                    <span>{isSavingVersion ? 'Saving...' : 'Save'}</span>
+                  </button>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {/* Overwrite Selector if at Limit 3/3 */}
+                {versionCount >= maxVersions && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      marginTop: 6,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, color: '#fca5a5', fontWeight: 600, marginBottom: 4 }}>
+                      Storage limit (3/3) reached. Select a notebook to replace:
+                    </div>
+                    <select
+                      value={replaceVersionId}
+                      onChange={(e) => setReplaceVersionId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(15, 23, 42, 0.8)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        color: '#f8fafc',
+                        fontSize: 11,
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">-- Choose notebook to overwrite --</option>
+                      {savedVersions.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.version_name} ({v.elements_count} items, {v.pages_count} pages)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </form>
+
+              {/* Saved Versions List */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>Saved Versions (Server Storage):</span>
+                  <button
+                    type="button"
+                    onClick={() => conn.send('NOTEBOOK_VERSION_LIST_REQ', {})}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#38bdf8',
+                      fontSize: 11,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: 0,
+                    }}
+                  >
+                    <RefreshCw size={11} /> Refresh
+                  </button>
+                </div>
+
+                {savedVersions.length === 0 ? (
+                  <div
+                    style={{
+                      background: 'rgba(15, 23, 42, 0.4)',
+                      border: '1px dashed rgba(255, 255, 255, 0.1)',
+                      borderRadius: 8,
+                      padding: '14px 10px',
+                      textAlign: 'center',
+                      color: '#64748b',
+                      fontSize: 12,
+                    }}
+                  >
+                    No saved notebooks yet. Save above to store a version on the server.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {savedVersions.map((ver) => {
+                      const dateStr = ver.updated_at
+                        ? new Date(typeof ver.updated_at === 'number' ? ver.updated_at : Date.parse(ver.updated_at as string)).toLocaleString([], {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : '';
+                      const isRestoring = isRestoringVersionId === ver.id;
+                      const isDeleting = isDeletingVersionId === ver.id;
+
+                      return (
+                        <div
+                          key={ver.id}
+                          style={{
+                            background: 'rgba(15, 23, 42, 0.6)',
+                            border: '1px solid rgba(255, 255, 255, 0.08)',
+                            borderRadius: 8,
+                            padding: '8px 10px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                          }}
+                        >
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {ver.version_name}
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                              <span>{ver.elements_count} items</span>
+                              <span>·</span>
+                              <span>{ver.pages_count} pages</span>
+                              {dateStr && (
+                                <>
+                                  <span>·</span>
+                                  <span>{dateStr}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreVersion(ver.id, ver.version_name)}
+                              disabled={isRestoring}
+                              title="Restore this saved version to the active whiteboard"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                background: 'rgba(34, 197, 94, 0.2)',
+                                color: '#4ade80',
+                                border: '1px solid rgba(34, 197, 94, 0.3)',
+                                borderRadius: 6,
+                                padding: '5px 8px',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: isRestoring ? 'wait' : 'pointer',
+                              }}
+                            >
+                              <RefreshCw size={11} className={isRestoring ? 'spin' : ''} />
+                              <span>{isRestoring ? '...' : 'Restore'}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteVersion(ver.id, ver.version_name)}
+                              disabled={isDeleting}
+                              title="Delete this version from server storage"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                color: '#f87171',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                borderRadius: 6,
+                                padding: '5px 7px',
+                                cursor: isDeleting ? 'wait' : 'pointer',
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Host Quick Governance & Offline Export/Import */}
+              <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 12 }}>
+                {isHost && (
                   <button
                     onClick={onToggleBoardAccess}
                     style={{
+                      width: '100%',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -910,6 +1342,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
+                      marginBottom: 10,
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -918,28 +1351,30 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                     </span>
                     <span style={{ fontSize: 11, opacity: 0.8 }}>{isBoardLocked ? 'Enable' : 'Disable'}</span>
                   </button>
+                )}
 
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={handleExportSnapshot}
-                      style={{
-                        flex: 1,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        background: 'rgba(255, 255, 255, 0.08)',
-                        color: '#cbd5e1',
-                        border: '1px solid rgba(255, 255, 255, 0.1)',
-                        fontSize: 12,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Download size={14} /> Export State
-                    </button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    onClick={handleExportSnapshot}
+                    style={{
+                      flex: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      padding: '8px 10px',
+                      borderRadius: 8,
+                      background: 'rgba(255, 255, 255, 0.08)',
+                      color: '#cbd5e1',
+                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Download size={14} /> Export JSON
+                  </button>
 
+                  {isHost && (
                     <label
                       style={{
                         flex: 1,
@@ -956,13 +1391,13 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                         cursor: 'pointer',
                       }}
                     >
-                      <Upload size={14} /> Restore
+                      <Upload size={14} /> Import JSON
                       <input type="file" accept=".json" onChange={handleImportFile} style={{ display: 'none' }} />
                     </label>
-                  </div>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>

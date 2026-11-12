@@ -31,6 +31,8 @@ import {
   Lock,
   Unlock,
   MousePointer2,
+  RotateCcw,
+  RotateCw,
 } from 'lucide-react';
 
 // Initialize registries once
@@ -506,6 +508,52 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               <span>Read-Only</span>
             </span>
           ) : null}
+
+          {/* Quick Undo & Redo Header Controls (Always visible in Whiteboard mode) */}
+          {activeTab === 'whiteboard' && !isAccessDisabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <button
+                onClick={() => store.undo()}
+                disabled={!store.canUndo()}
+                title="Undo (Ctrl+Z)"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: store.canUndo() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 7,
+                  color: store.canUndo() ? '#ffffff' : '#64748b',
+                  opacity: store.canUndo() ? 1 : 0.4,
+                  cursor: store.canUndo() ? 'pointer' : 'not-allowed',
+                  padding: '5px 8px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <RotateCcw size={14} />
+              </button>
+              <button
+                onClick={() => store.redo()}
+                disabled={!store.canRedo()}
+                title="Redo (Ctrl+Y)"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: store.canRedo() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 7,
+                  color: store.canRedo() ? '#ffffff' : '#64748b',
+                  opacity: store.canRedo() ? 1 : 0.4,
+                  cursor: store.canRedo() ? 'pointer' : 'not-allowed',
+                  padding: '5px 8px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <RotateCw size={14} />
+              </button>
+            </div>
+          )}
 
           <nav
             style={{

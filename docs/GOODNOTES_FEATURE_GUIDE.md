@@ -228,8 +228,8 @@ Located at the top right of the room interface:
 
 | Category | Shortcut | Function |
 |---|---|---|
-| **History** | `Ctrl + Z` | Undo |
-| | `Ctrl + Y` or `Ctrl + Shift + Z` | Redo |
+| **History** | `Ctrl + Z` or Top Toolbar / Header Undo Button | Undo (Atomic multi-stroke / erase transaction) |
+| | `Ctrl + Y` / `Ctrl + Shift + Z` or Redo Button | Redo |
 | **Selection** | `Ctrl + D` | Duplicate selected element |
 | | `Delete` / `Backspace` | Delete selected element |
 | | `Ctrl + A` | Select all elements on page |
@@ -291,3 +291,29 @@ CollabBoard X includes first-class responsive styling tailored for smartphones (
 ### 18.4 Touch & Stylus Optimization
 - Native touch event prevention eliminates accidental page scrolling or elastic bounce when drawing with a finger or Apple Pencil / stylus.
 - Double-tap gesture support enables effortless in-place editing of sticky notes and text annotations on touchscreens.
+
+---
+
+## 19. Server-Side Notebook Version Control & Snapshot Restores
+
+CollabBoard X includes built-in server-side version control tailored for lectures, workshops, and multi-session group projects:
+
+### 19.1 3-Notebook Server Storage Limit
+- Each user (`username` or IP address fallback) is allotted **3 persistent notebook version slots** stored directly on the server's SQLite WAL database.
+- The UI displays an active slot status indicator (e.g. `2 / 3 Slots Used`) with 3 visual slot pills in the **Meeting & Controls** administration tab.
+
+### 19.2 Saving Notebook Versions
+- Enter a version title (or allow the app to auto-generate a timestamped name, e.g. `Notebook v2 (10:45 AM)`).
+- Click **`[ 💾 Save ]`**. The server atomically snapshots all canvas elements across all notebook pages, including paper patterns, background colors, and sequence numbers.
+- If all 3 slots are occupied, the app alerts the user and opens a replacement dropdown, allowing you to select an existing version to overwrite or delete one to free a slot.
+
+### 19.3 Restoring Versions to the Live Room
+- In the Saved Versions list, every version displays its element count, total pages, and creation/update timestamp.
+- Click **`[ 🔄 Restore ]`** next to any version.
+- After a safety confirmation dialog, the server replaces the live canvas and notebook page state in memory, writes the snapshot to the database, increments the sequence number, and immediately broadcasts the restored notebook state to all participants across the room.
+- A room-wide banner announces: *"Notebook restored to '[Version Name]' by [User Name]"*.
+
+### 19.4 Deleting & Offline Backups
+- Click the **`[ 🗑️ Trash ]`** icon next to any version to permanently remove it from server storage and free up a slot.
+- For local archival, use the **`[ 📥 Export JSON ]`** and **`[ 📤 Import JSON ]`** options to save or load board states directly from `.json` files on your computer.
+

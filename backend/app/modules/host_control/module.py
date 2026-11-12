@@ -3,6 +3,7 @@
 import json
 import logging
 import time
+import uuid
 from typing import List
 from app.modules.base import FeatureModule
 from app.core.context import ApplicationContext
@@ -37,6 +38,10 @@ class HostControlModule(FeatureModule):
         registry.register("HOST_SET_USER_ROLE", self.handle_set_user_role)
         registry.register("HOST_EXPORT_SNAPSHOT", self.handle_export_snapshot)
         registry.register("HOST_RESTORE_SNAPSHOT", self.handle_restore_snapshot)
+        registry.register("NOTEBOOK_VERSION_SAVE_REQ", self.handle_save_version)
+        registry.register("NOTEBOOK_VERSION_LIST_REQ", self.handle_list_versions)
+        registry.register("NOTEBOOK_VERSION_RESTORE_REQ", self.handle_restore_version)
+        registry.register("NOTEBOOK_VERSION_DELETE_REQ", self.handle_delete_version)
 
     async def handle_mute_user(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Allows room host to mute a specific participant or mute all participants."""
@@ -211,6 +216,7 @@ class HostControlModule(FeatureModule):
             "exported_at": int(time.time() * 1000),
             "sequence_number": room_actor.current_seq,
             "elements": canvas_snapshot.get("elements", {}),
+            "pages": canvas_snapshot.get("pages", {}),
         }
 
         await session.send_envelope(
@@ -220,6 +226,227 @@ class HostControlModule(FeatureModule):
                 type="HOST_SNAPSHOT_EXPORTED",
                 client_seq=envelope.client_seq,
                 payload={"snapshot": export_bundle},
+            )
+        )
+
+    def _get_owner_info(self, session: ClientSession) -> tuple:
+        username = (session.display_name or "").strip() or "Anonymous"
+        ip = getattr(session, "client_ip", None) or "127.0.0.1"
+        owner_key = username.lower()
+        return owner_key, username, ip
+
+    async def handle_save_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Saves current room state as a named notebook version with 3-notebook limit per user/ip."""
+        room_id = envelope.room_id
+        if getattr(session, "role", "EDITOR") == "VIEWER":
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="NOTEBOOK_VERSION_SAVE_RES",
+                    client_seq=envelope.client_seq,
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Viewers cannot save notebook versions."},
+                )
+            )
+            return
+
+        room_actor = await self.context.room_manager.get_room(room_id)
+        if not room_actor:
+            return
+
+        canvas_repo = self.context.repositories["canvas_repo"]
+        owner_key, owner_username, owner_ip = self._get_owner_info(session)
+
+        replace_version_id = envelope.payload.get("replace_version_id")
+        current_count = await canvas_repo.count_saved_versions_for_owner(owner_key)
+
+        MAX_LIMIT = 3
+        if current_count >= MAX_LIMIT and not replace_version_id:
+            existing_versions = await canvas_repo.get_saved_versions_for_owner(owner_key)
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="NOTEBOOK_VERSION_SAVE_RES",
+                    client_seq=envelope.client_seq,
+                    payload={
+                        "success": False,
+                        "error": "LIMIT_REACHED",
+                        "message": f"Notebook limit reached (maximum {MAX_LIMIT} notebooks allowed for '{owner_username}'). Delete an existing notebook version or select one to overwrite.",
+                        "current_count": current_count,
+                        "max_allowed": MAX_LIMIT,
+                        "versions": existing_versions,
+                    },
+                )
+            )
+            return
+
+        version_id = replace_version_id or f"ver-{uuid.uuid4().hex[:8]}"
+        version_name = (envelope.payload.get("version_name") or "").strip() or f"Version {current_count + 1} ({time.strftime('%b %d, %H:%M')})"
+
+        canvas_snapshot = room_actor.canvas_state.get_snapshot()
+        elements = canvas_snapshot.get("elements", {})
+        pages = canvas_snapshot.get("pages", {})
+
+        saved_record = await canvas_repo.save_notebook_version(
+            version_id=version_id,
+            owner_key=owner_key,
+            owner_username=owner_username,
+            owner_ip=owner_ip,
+            room_id=room_id,
+            version_name=version_name,
+            sequence_number=room_actor.current_seq,
+            elements_count=len(elements),
+            pages_count=len(pages),
+            state=canvas_snapshot,
+        )
+
+        all_versions = await canvas_repo.get_saved_versions_for_owner(owner_key)
+        await session.send_envelope(
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="NOTEBOOK_VERSION_SAVE_RES",
+                client_seq=envelope.client_seq,
+                payload={
+                    "success": True,
+                    "version": saved_record,
+                    "versions": all_versions,
+                    "current_count": len(all_versions),
+                    "max_allowed": MAX_LIMIT,
+                },
+            )
+        )
+
+    async def handle_list_versions(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Returns all saved notebook versions for the requesting user/ip."""
+        room_id = envelope.room_id
+        canvas_repo = self.context.repositories["canvas_repo"]
+        owner_key, owner_username, _ = self._get_owner_info(session)
+
+        versions = await canvas_repo.get_saved_versions_for_owner(owner_key)
+        await session.send_envelope(
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="NOTEBOOK_VERSION_LIST_RES",
+                client_seq=envelope.client_seq,
+                payload={
+                    "versions": versions,
+                    "current_count": len(versions),
+                    "max_allowed": 3,
+                    "owner_username": owner_username,
+                },
+            )
+        )
+
+    async def handle_restore_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Restores a saved notebook version to the active whiteboard room."""
+        room_id = envelope.room_id
+        if getattr(session, "role", "EDITOR") == "VIEWER":
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="NOTEBOOK_VERSION_RESTORE_RES",
+                    client_seq=envelope.client_seq,
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Viewers cannot restore notebook versions."},
+                )
+            )
+            return
+
+        version_id = envelope.payload.get("version_id")
+        if not version_id:
+            return
+
+        canvas_repo = self.context.repositories["canvas_repo"]
+        saved_version = await canvas_repo.get_saved_version_by_id(version_id)
+        if not saved_version:
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="NOTEBOOK_VERSION_RESTORE_RES",
+                    client_seq=envelope.client_seq,
+                    payload={"success": False, "error": "NOT_FOUND", "message": "Saved version not found."},
+                )
+            )
+            return
+
+        room_actor = await self.context.room_manager.get_or_create_room(room_id)
+        snapshot_state = saved_version["state"]
+
+        # Restore in-memory state
+        room_actor.canvas_state.restore_snapshot(snapshot_state)
+        room_actor.current_seq += 1
+        new_seq = room_actor.current_seq
+
+        # Save to SQLite WAL snapshots
+        await canvas_repo.save_snapshot(
+            room_id, new_seq, room_actor.canvas_state.get_snapshot()
+        )
+        await canvas_repo.update_room_seq(room_id, new_seq)
+
+        # Broadcast restored snapshot to all participants in room
+        snapshot_env = await room_actor.get_initial_snapshot_envelope()
+        await self.context.connection_manager.broadcast_to_room(room_id, snapshot_env)
+
+        # Broadcast version restored announcement
+        await self.context.connection_manager.broadcast_to_room(
+            room_id,
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="NOTEBOOK_VERSION_RESTORED_NOTIFICATION",
+                payload={
+                    "version_id": version_id,
+                    "version_name": saved_version["version_name"],
+                    "restored_by": session.display_name or "Host",
+                },
+            ),
+        )
+
+        await session.send_envelope(
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="NOTEBOOK_VERSION_RESTORE_RES",
+                client_seq=envelope.client_seq,
+                payload={
+                    "success": True,
+                    "version_id": version_id,
+                    "version_name": saved_version["version_name"],
+                },
+            )
+        )
+
+    async def handle_delete_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Deletes a saved notebook version."""
+        room_id = envelope.room_id
+        version_id = envelope.payload.get("version_id")
+        if not version_id:
+            return
+
+        canvas_repo = self.context.repositories["canvas_repo"]
+        owner_key, _, _ = self._get_owner_info(session)
+
+        # Only allow deleting own version or host deleting
+        deleted = await canvas_repo.delete_saved_version(version_id, owner_key if session.role != "HOST" else None)
+        remaining = await canvas_repo.get_saved_versions_for_owner(owner_key)
+
+        await session.send_envelope(
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="NOTEBOOK_VERSION_DELETE_RES",
+                client_seq=envelope.client_seq,
+                payload={
+                    "success": deleted,
+                    "version_id": version_id,
+                    "versions": remaining,
+                    "current_count": len(remaining),
+                    "max_allowed": 3,
+                },
             )
         )
 

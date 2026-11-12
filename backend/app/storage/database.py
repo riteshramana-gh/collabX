@@ -68,6 +68,25 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_room_seq 
 ON chat_messages(room_id, server_seq);
+
+CREATE TABLE IF NOT EXISTS saved_notebook_versions (
+    id TEXT PRIMARY KEY,
+    owner_key TEXT NOT NULL,
+    owner_username TEXT NOT NULL,
+    owner_ip TEXT NOT NULL,
+    room_id TEXT NOT NULL,
+    version_name TEXT NOT NULL,
+    sequence_number INTEGER NOT NULL,
+    elements_count INTEGER NOT NULL,
+    pages_count INTEGER NOT NULL,
+    state_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_saved_notebooks_owner 
+ON saved_notebook_versions(owner_key, created_at DESC);
 """
 
 
