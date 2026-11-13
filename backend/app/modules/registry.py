@@ -51,7 +51,6 @@ class ModuleRegistry:
             await mod.initialize(context)
             mod.register_events(context.event_bus)
             self._initialized_order.append(mod)
-            context.modules[mod.name] = mod
 
         logger.info(f"All {len(self._initialized_order)} feature modules initialized successfully.")
 

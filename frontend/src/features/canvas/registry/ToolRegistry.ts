@@ -38,7 +38,6 @@ export interface CanvasToolContext {
   rulerX?: number;
   rulerY?: number;
   addLaserPoint?: (x: number, y: number) => void;
-  openInlineTextEditor?: (elem: CanvasElement) => void;
 }
 
 export interface CanvasTool {

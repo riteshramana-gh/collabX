@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CanvasStore } from '../state/CanvasStore';
 import { ToolRegistry, CanvasToolContext, Point } from '../registry/ToolRegistry';
 import { RendererRegistry } from '../registry/RendererRegistry';
-import { ZoomIn, ZoomOut, Maximize2, Edit2, X, Check, Home } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Edit2, X, Check } from 'lucide-react';
 
 function isDarkColor(hex: string): boolean {
   if (!hex || hex === 'transparent') return false;
@@ -40,7 +40,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
     height: number;
   } | null>(null);
   const [editingText, setEditingText] = useState<string>('');
-  const [hoverHandleCursor, setHoverHandleCursor] = useState<string | null>(null);
 
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (isReadOnly) return;
@@ -71,42 +70,10 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
 
   const handleSaveEditing = () => {
     if (editingElement) {
-      const trimmed = editingText.trim();
-      const el = store.getElements().get(editingElement.id);
-      if (el && el.type === 'TEXT' && trimmed.length === 0) {
-        store.deleteSelected();
-      } else {
-        store.updateElementText(editingElement.id, editingText);
-      }
+      store.updateElementText(editingElement.id, editingText);
       setEditingElement(null);
     }
   };
-
-  const handleCancelEditing = () => {
-    if (editingElement) {
-      const el = store.getElements().get(editingElement.id);
-      if (el && el.type === 'TEXT' && (!el.text || el.text.trim().length === 0)) {
-        store.deleteSelected();
-      }
-      setEditingElement(null);
-    }
-  };
-
-  // Keyboard shortcut: Home key resets canvas pan to (0,0) and zoom to 100%
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-      if (e.key === 'Home') {
-        store.setPan(0, 0);
-        store.setZoom(1.0);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [store]);
 
   // Screen to world coordinates transform with sub-pixel canvas bounding box alignment
   const screenToWorld = useCallback(
@@ -365,19 +332,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
           store.setSelectedElementId(null);
         },
         addLaserPoint: (x, y) => store.addLaserPoint(x, y),
-        openInlineTextEditor: (elem) => {
-          setEditingElement({
-            id: elem.id,
-            text: elem.text || '',
-            fillColor: elem.fill_color || '#ffffff',
-            x: elem.x,
-            y: elem.y,
-            width: elem.width || 220,
-            height: elem.height || 80,
-          });
-          setEditingText(elem.text || '');
-          store.setSelectedElementId(elem.id);
-        },
       };
       activeTool.onPointerDown(toolCtx, worldPoint, e.nativeEvent);
     }
@@ -392,30 +346,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
     const worldPoint = screenToWorld(e.clientX, e.clientY);
     if (onCursorMove) {
       onCursorMove(worldPoint);
-    }
-
-    // Dynamic resize cursor feedback when hovering over corner handles in Select mode
-    if (!isPointerDownRef.current && store.activeToolId === 'select' && store.selectedElementId) {
-      const selElem = store.getElements().get(store.selectedElementId);
-      if (selElem && !selElem.is_locked) {
-        const b = RendererRegistry.getBounds(selElem);
-        const pad = 6;
-        const radius = 14;
-        const corners: Array<{ cursor: string; x: number; y: number }> = [
-          { cursor: 'nwse-resize', x: b.minX - pad, y: b.minY - pad },
-          { cursor: 'nesw-resize', x: b.maxX + pad, y: b.minY - pad },
-          { cursor: 'nwse-resize', x: b.maxX + pad, y: b.maxY + pad },
-          { cursor: 'nesw-resize', x: b.minX - pad, y: b.maxY + pad },
-        ];
-        const hit = corners.find((c) => Math.hypot(worldPoint.x - c.x, worldPoint.y - c.y) <= radius);
-        if (hit && hoverHandleCursor !== hit.cursor) {
-          setHoverHandleCursor(hit.cursor);
-        } else if (!hit && hoverHandleCursor !== null) {
-          setHoverHandleCursor(null);
-        }
-      }
-    } else if (!isPointerDownRef.current && hoverHandleCursor !== null) {
-      setHoverHandleCursor(null);
     }
 
     if (!isPointerDownRef.current) return;
@@ -454,19 +384,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
           store.setSelectedElementId(null);
         },
         addLaserPoint: (x, y) => store.addLaserPoint(x, y),
-        openInlineTextEditor: (elem) => {
-          setEditingElement({
-            id: elem.id,
-            text: elem.text || '',
-            fillColor: elem.fill_color || '#ffffff',
-            x: elem.x,
-            y: elem.y,
-            width: elem.width || 220,
-            height: elem.height || 80,
-          });
-          setEditingText(elem.text || '');
-          store.setSelectedElementId(elem.id);
-        },
       };
       activeTool.onPointerMove(toolCtx, worldPoint, e.nativeEvent);
     }
@@ -523,19 +440,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
           store.setSelectedElementId(null);
         },
         addLaserPoint: (x, y) => store.addLaserPoint(x, y),
-        openInlineTextEditor: (elem) => {
-          setEditingElement({
-            id: elem.id,
-            text: elem.text || '',
-            fillColor: elem.fill_color || '#ffffff',
-            x: elem.x,
-            y: elem.y,
-            width: elem.width || 220,
-            height: elem.height || 80,
-          });
-          setEditingText(elem.text || '');
-          store.setSelectedElementId(elem.id);
-        },
       };
       activeTool.onPointerUp(toolCtx, worldPoint, e.nativeEvent);
     }
@@ -659,7 +563,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
   };
 
   const activeTool = ToolRegistry.get(store.activeToolId);
-  const cursorStyle = hoverHandleCursor || (activeTool ? activeTool.cursor : 'default');
+  const cursorStyle = activeTool ? activeTool.cursor : 'default';
 
   const zoomBtnStyle: React.CSSProperties = {
     display: 'flex',
@@ -749,118 +653,111 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
       })()}
 
       {/* In-Place Sticky Note / Text Editor Modal Overlay */}
-      {editingElement && (() => {
-        const currentElem = store.getElements().get(editingElement.id);
-        const isTextElem = currentElem?.type === 'TEXT';
-        const cardBg = isTextElem ? '#ffffff' : (editingElement.fillColor || '#fef08a');
-
-        return (
-          <div
-            style={{
-              position: 'absolute',
-              left: Math.max(12, Math.min(window.innerWidth - 300, editingElement.x * store.zoom + store.panX)),
-              top: Math.max(50, Math.min(window.innerHeight - 240, editingElement.y * store.zoom + store.panY)),
-              width: Math.max(240, (editingElement.width || (isTextElem ? 220 : 160)) * store.zoom),
-              minHeight: Math.max(130, (editingElement.height || (isTextElem ? 90 : 140)) * store.zoom),
-              background: cardBg,
-              borderRadius: 10,
-              border: isTextElem ? '1.5px solid #3b82f6' : '1px solid rgba(0,0,0,0.15)',
-              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(59, 130, 246, 0.4)',
-              zIndex: 100,
-              display: 'flex',
-              flexDirection: 'column',
-              padding: 10,
-              boxSizing: 'border-box',
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                {isTextElem ? '✏️ In-Place Text Box' : '📝 Edit Sticky Note'}
-              </span>
-              <button
-                onClick={handleCancelEditing}
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#64748b',
-                  padding: 2,
-                }}
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            <textarea
-              autoFocus
-              value={editingText}
-              onChange={(e) => setEditingText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                  e.preventDefault();
-                  handleSaveEditing();
-                } else if (e.key === 'Escape') {
-                  handleCancelEditing();
-                }
-              }}
-              placeholder={isTextElem ? "Type text here... (Ctrl+Enter to save)" : "Type your note here... (Ctrl+Enter to save)"}
+      {editingElement && (
+        <div
+          style={{
+            position: 'absolute',
+            left: Math.max(12, Math.min(window.innerWidth - 280, editingElement.x * store.zoom + store.panX)),
+            top: Math.max(50, Math.min(window.innerHeight - 220, editingElement.y * store.zoom + store.panY)),
+            width: Math.max(220, (editingElement.width || 160) * store.zoom),
+            minHeight: Math.max(150, (editingElement.height || 140) * store.zoom),
+            background: editingElement.fillColor || '#fef08a',
+            borderRadius: 10,
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 2px #3b82f6',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 10,
+            boxSizing: 'border-box',
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              Edit Sticky Note
+            </span>
+            <button
+              onClick={() => setEditingElement(null)}
               style={{
-                flex: 1,
-                width: '100%',
-                minHeight: isTextElem ? 60 : 90,
                 background: 'transparent',
                 border: 'none',
-                resize: 'vertical',
-                outline: 'none',
-                fontFamily: currentElem?.font_family || '"Segoe UI", -apple-system, sans-serif',
-                fontSize: 14,
-                lineHeight: '1.45',
-                color: isTextElem ? (currentElem?.stroke_color || '#0f172a') : '#0f172a',
-                boxSizing: 'border-box',
+                cursor: 'pointer',
+                color: '#64748b',
+                padding: 2,
               }}
-            />
-
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)', paddingTop: 8 }}>
-              <button
-                onClick={handleCancelEditing}
-                style={{
-                  padding: '4px 10px',
-                  borderRadius: 6,
-                  border: '1px solid rgba(0,0,0,0.2)',
-                  background: 'rgba(255,255,255,0.7)',
-                  fontSize: 12,
-                  color: '#334155',
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSaveEditing}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 5,
-                  padding: '4px 12px',
-                  borderRadius: 6,
-                  border: 'none',
-                  background: '#3b82f6',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: '#ffffff',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 8px rgba(59, 130, 246, 0.4)',
-                }}
-              >
-                <Check size={13} />
-                <span>Save</span>
-              </button>
-            </div>
+            >
+              <X size={15} />
+            </button>
           </div>
-        );
-      })()}
+
+          <textarea
+            autoFocus
+            value={editingText}
+            onChange={(e) => setEditingText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+                e.preventDefault();
+                handleSaveEditing();
+              } else if (e.key === 'Escape') {
+                setEditingElement(null);
+              }
+            }}
+            placeholder="Type your note here..."
+            style={{
+              flex: 1,
+              width: '100%',
+              minHeight: 90,
+              background: 'transparent',
+              border: 'none',
+              resize: 'vertical',
+              outline: 'none',
+              fontFamily: '"Segoe UI", -apple-system, sans-serif',
+              fontSize: 13,
+              lineHeight: '1.45',
+              color: '#0f172a',
+              boxSizing: 'border-box',
+            }}
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)', paddingTop: 8 }}>
+            <button
+              onClick={() => setEditingElement(null)}
+              style={{
+                padding: '4px 10px',
+                borderRadius: 6,
+                border: '1px solid rgba(0,0,0,0.2)',
+                background: 'rgba(255,255,255,0.7)',
+                fontSize: 12,
+                color: '#334155',
+                cursor: 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSaveEditing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 12px',
+                borderRadius: 6,
+                border: 'none',
+                background: '#3b82f6',
+                fontSize: 12,
+                fontWeight: 600,
+                color: '#ffffff',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(59, 130, 246, 0.4)',
+              }}
+            >
+              <Check size={13} />
+              <span>Save Note</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Floating Professional Zoom Widget (Bottom-Left) */}
       <div
@@ -935,28 +832,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
         >
           <Maximize2 size={13} />
           <span>Fit</span>
-        </button>
-        <button
-          onClick={() => {
-            store.setPan(0, 0);
-            store.setZoom(1.0);
-          }}
-          title="Return to Home (100% Zoom centered at origin)"
-          style={{
-            ...zoomBtnStyle,
-            gap: 4,
-            width: 'auto',
-            padding: '2px 9px',
-            fontSize: 11,
-            fontWeight: 700,
-            color: '#38bdf8',
-            background: 'rgba(56, 189, 248, 0.15)',
-            border: '1px solid rgba(56, 189, 248, 0.35)',
-            borderRadius: 12,
-          }}
-        >
-          <Home size={13} />
-          <span>Home</span>
         </button>
       </div>
     </div>

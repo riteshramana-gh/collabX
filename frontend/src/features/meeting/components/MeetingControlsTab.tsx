@@ -4,7 +4,6 @@ import { ConnectionManager } from '../../../core/network/ConnectionManager';
 import { CanvasStore } from '../../canvas/state/CanvasStore';
 import { WebRTCVoiceMesh } from '../../voice/rtc/WebRTCVoiceMesh';
 import { RoomParticipant } from '../../../types/protocol';
-import { copyToClipboard } from '../../../core/utils/clipboard';
 import {
   Lock,
   Unlock,
@@ -33,7 +32,6 @@ import {
   AlertCircle,
   CheckCircle2,
   History,
-  MessageSquare,
 } from 'lucide-react';
 
 interface MeetingControlsTabProps {
@@ -95,9 +93,6 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
   const [versionError, setVersionError] = useState<string | null>(null);
   const [versionSuccessMsg, setVersionSuccessMsg] = useState<string | null>(null);
   const [replaceVersionId, setReplaceVersionId] = useState<string>('');
-
-  // Room Chat Moderation Policy State
-  const [chatPolicy, setChatPolicy] = useState<string>('EVERYONE');
 
   // Format Share URL
   const host = serverAddress.startsWith('http') ? serverAddress : `http://${serverAddress}`;
@@ -255,19 +250,6 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       }
     });
 
-    // Chat Policy Listeners
-    conn.send('CHAT_HISTORY_REQ', { limit: 1 });
-    const unsubChatHist = conn.on('CHAT_HISTORY_RES', (envelope) => {
-      if (envelope.payload?.chat_policy) {
-        setChatPolicy(envelope.payload.chat_policy);
-      }
-    });
-    const unsubChatPolicy = conn.on('ROOM_CHAT_POLICY_CHANGED', (envelope) => {
-      if (envelope.payload?.chat_policy) {
-        setChatPolicy(envelope.payload.chat_policy);
-      }
-    });
-
     return () => {
       clearInterval(interval);
       unsubRoster();
@@ -281,8 +263,6 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       unsubVersionRestore();
       unsubVersionRestoredNotif();
       unsubVersionDelete();
-      unsubChatHist();
-      unsubChatPolicy();
     };
   }, [conn, roomId, currentUserId, voiceMesh]);
 
@@ -339,18 +319,12 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
   };
 
   const handleKick = (targetSessionId: string, name: string) => {
-    if (confirm(`Kick ${name} from this room permanently?`)) {
-      setParticipants((prev) => prev.filter((p) => p.session_id !== targetSessionId));
+    if (confirm(`Kick ${name} from this room?`)) {
       conn.send('HOST_KICK_USER', {
         target_session_id: targetSessionId,
         reason: 'Removed by host',
       });
     }
-  };
-
-  const handleChatPolicyChange = (newPolicy: string) => {
-    setChatPolicy(newPolicy);
-    conn.send('HOST_SET_CHAT_POLICY', { policy: newPolicy });
   };
 
   const handleExportSnapshot = () => {
@@ -379,20 +353,16 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
     e.target.value = '';
   };
 
-  const handleCopyLink = async () => {
-    const ok = await copyToClipboard(shareUrl);
-    if (ok) {
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2000);
-    }
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handleCopyCode = async () => {
-    const ok = await copyToClipboard(roomId);
-    if (ok) {
-      setCopiedCode(true);
-      setTimeout(() => setCopiedCode(false), 2000);
-    }
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(roomId);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
   };
 
   return (
@@ -809,87 +779,6 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                 );
               })}
             </div>
-
-            {/* Room Chat Moderation Policy (Host Controlled) */}
-            <div
-              style={{
-                marginTop: 16,
-                padding: '14px 16px',
-                borderRadius: 12,
-                background: 'rgba(15, 23, 42, 0.6)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: '#f8fafc' }}>
-                  <MessageSquare size={15} color="#38bdf8" />
-                  <span>Room Chat Permissions</span>
-                </div>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    padding: '2px 8px',
-                    borderRadius: 6,
-                    background:
-                      chatPolicy === 'DISABLED'
-                        ? 'rgba(239, 68, 68, 0.2)'
-                        : chatPolicy === 'HOST_ONLY'
-                        ? 'rgba(245, 158, 11, 0.2)'
-                        : chatPolicy === 'NO_DIRECT'
-                        ? 'rgba(168, 85, 247, 0.2)'
-                        : 'rgba(34, 197, 94, 0.2)',
-                    color:
-                      chatPolicy === 'DISABLED'
-                        ? '#f87171'
-                        : chatPolicy === 'HOST_ONLY'
-                        ? '#fbbf24'
-                        : chatPolicy === 'NO_DIRECT'
-                        ? '#c084fc'
-                        : '#4ade80',
-                  }}
-                >
-                  {chatPolicy}
-                </span>
-              </div>
-              <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 10 }}>
-                {isHost
-                  ? 'Define what level of messaging is permitted in the room for all participants.'
-                  : 'Current chat restrictions set by the room host.'}
-              </div>
-              {isHost ? (
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {[
-                    { id: 'EVERYONE', label: '🌐 Public & Direct', desc: 'Full chat enabled' },
-                    { id: 'HOST_ONLY', label: '👑 Host Only', desc: 'Participants can only message Host' },
-                    { id: 'NO_DIRECT', label: '📢 Public Only', desc: 'No private 1:1 participant chats' },
-                    { id: 'DISABLED', label: '🚫 Disabled', desc: 'Turn off all chat messages' },
-                  ].map((opt) => (
-                    <button
-                      key={opt.id}
-                      onClick={() => handleChatPolicyChange(opt.id)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: 8,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        border: chatPolicy === opt.id ? '1px solid #38bdf8' : '1px solid rgba(255, 255, 255, 0.12)',
-                        background: chatPolicy === opt.id ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-                        color: chatPolicy === opt.id ? '#38bdf8' : '#cbd5e1',
-                        cursor: 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ fontSize: 12, color: '#64748b', fontStyle: 'italic' }}>
-                  Controlled by Room Host
-                </div>
-              )}
-            </div>
           </div>
 
           {/* Column 2: Share & QR Code + Voice + Governance */}
@@ -1217,112 +1106,90 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                 </div>
               )}
 
-              {/* Save Version Form (Host Only) */}
-              {isHost ? (
-                <form onSubmit={handleSaveVersion} style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6, fontWeight: 600 }}>
-                    Save Active Whiteboard Version:
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, marginBottom: versionCount >= maxVersions ? 8 : 0 }}>
-                    <input
-                      type="text"
-                      placeholder={`e.g. Lecture Notes v${versionCount + 1}`}
-                      value={newVersionName}
-                      onChange={(e) => setNewVersionName(e.target.value)}
-                      maxLength={40}
+              {/* Save Version Form */}
+              <form onSubmit={handleSaveVersion} style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6, fontWeight: 600 }}>
+                  Save Active Whiteboard Version:
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginBottom: versionCount >= maxVersions ? 8 : 0 }}>
+                  <input
+                    type="text"
+                    placeholder={`e.g. Lecture Notes v${versionCount + 1}`}
+                    value={newVersionName}
+                    onChange={(e) => setNewVersionName(e.target.value)}
+                    maxLength={40}
+                    style={{
+                      flex: 1,
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: '1px solid rgba(255, 255, 255, 0.15)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      color: '#ffffff',
+                      fontSize: 12,
+                      outline: 'none',
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSavingVersion || (versionCount >= maxVersions && !replaceVersionId)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      background: versionCount >= maxVersions && !replaceVersionId ? 'rgba(255, 255, 255, 0.1)' : '#38bdf8',
+                      color: versionCount >= maxVersions && !replaceVersionId ? '#64748b' : '#0f172a',
+                      border: 'none',
+                      borderRadius: 8,
+                      padding: '8px 12px',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: versionCount >= maxVersions && !replaceVersionId ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <Save size={13} />
+                    <span>{isSavingVersion ? 'Saving...' : 'Save'}</span>
+                  </button>
+                </div>
+
+                {/* Overwrite Selector if at Limit 3/3 */}
+                {versionCount >= maxVersions && (
+                  <div
+                    style={{
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      borderRadius: 8,
+                      padding: '8px 10px',
+                      marginTop: 6,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, color: '#fca5a5', fontWeight: 600, marginBottom: 4 }}>
+                      Storage limit (3/3) reached. Select a notebook to replace:
+                    </div>
+                    <select
+                      value={replaceVersionId}
+                      onChange={(e) => setReplaceVersionId(e.target.value)}
                       style={{
-                        flex: 1,
-                        background: 'rgba(15, 23, 42, 0.7)',
-                        border: '1px solid rgba(255, 255, 255, 0.15)',
-                        borderRadius: 8,
-                        padding: '8px 10px',
-                        color: '#ffffff',
-                        fontSize: 12,
+                        width: '100%',
+                        background: 'rgba(15, 23, 42, 0.8)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        color: '#f8fafc',
+                        fontSize: 11,
                         outline: 'none',
                       }}
-                    />
-                    <button
-                      type="submit"
-                      disabled={isSavingVersion || (versionCount >= maxVersions && !replaceVersionId)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 5,
-                        background: versionCount >= maxVersions && !replaceVersionId ? 'rgba(255, 255, 255, 0.1)' : '#38bdf8',
-                        color: versionCount >= maxVersions && !replaceVersionId ? '#64748b' : '#0f172a',
-                        border: 'none',
-                        borderRadius: 8,
-                        padding: '8px 12px',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        cursor: versionCount >= maxVersions && !replaceVersionId ? 'not-allowed' : 'pointer',
-                        transition: 'all 0.15s ease',
-                      }}
                     >
-                      <Save size={13} />
-                      <span>{isSavingVersion ? 'Saving...' : 'Save'}</span>
-                    </button>
+                      <option value="">-- Choose notebook to overwrite --</option>
+                      {savedVersions.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.version_name} ({v.elements_count} items, {v.pages_count} pages)
+                        </option>
+                      ))}
+                    </select>
                   </div>
-
-                  {/* Overwrite Selector if at Limit 3/3 */}
-                  {versionCount >= maxVersions && (
-                    <div
-                      style={{
-                        background: 'rgba(239, 68, 68, 0.1)',
-                        border: '1px solid rgba(239, 68, 68, 0.25)',
-                        borderRadius: 8,
-                        padding: '8px 10px',
-                        marginTop: 6,
-                      }}
-                    >
-                      <div style={{ fontSize: 11, color: '#fca5a5', fontWeight: 600, marginBottom: 4 }}>
-                        Storage limit (3/3) reached. Select a notebook to replace:
-                      </div>
-                      <select
-                        value={replaceVersionId}
-                        onChange={(e) => setReplaceVersionId(e.target.value)}
-                        style={{
-                          width: '100%',
-                          background: 'rgba(15, 23, 42, 0.8)',
-                          border: '1px solid rgba(239, 68, 68, 0.3)',
-                          borderRadius: 6,
-                          padding: '6px 8px',
-                          color: '#f8fafc',
-                          fontSize: 11,
-                          outline: 'none',
-                        }}
-                      >
-                        <option value="">-- Choose notebook to overwrite --</option>
-                        {savedVersions.map((v) => (
-                          <option key={v.id} value={v.id}>
-                            {v.version_name} ({v.elements_count} items, {v.pages_count} pages)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </form>
-              ) : (
-                <div
-                  style={{
-                    background: 'rgba(59, 130, 246, 0.08)',
-                    border: '1px solid rgba(59, 130, 246, 0.25)',
-                    borderRadius: 10,
-                    padding: '12px 14px',
-                    marginBottom: 16,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                  }}
-                >
-                  <Crown size={18} color="#38bdf8" />
-                  <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.4 }}>
-                    <strong style={{ color: '#f8fafc' }}>Host-Governed Notebook Versions</strong>
-                    <br />
-                    Only the Room Host can save, restore, or delete whiteboard notebook versions on the server.
-                  </div>
-                </div>
-              )}
+                )}
+              </form>
 
               {/* Saved Versions List */}
               <div style={{ marginBottom: 16 }}>
@@ -1407,56 +1274,48 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                            {isHost ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleRestoreVersion(ver.id, ver.version_name)}
-                                  disabled={isRestoring}
-                                  title="Restore this saved version to the active whiteboard"
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    background: 'rgba(34, 197, 94, 0.2)',
-                                    color: '#4ade80',
-                                    border: '1px solid rgba(34, 197, 94, 0.3)',
-                                    borderRadius: 6,
-                                    padding: '5px 8px',
-                                    fontSize: 11,
-                                    fontWeight: 600,
-                                    cursor: isRestoring ? 'wait' : 'pointer',
-                                  }}
-                                >
-                                  <RefreshCw size={11} className={isRestoring ? 'spin' : ''} />
-                                  <span>{isRestoring ? '...' : 'Restore'}</span>
-                                </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreVersion(ver.id, ver.version_name)}
+                              disabled={isRestoring}
+                              title="Restore this saved version to the active whiteboard"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                background: 'rgba(34, 197, 94, 0.2)',
+                                color: '#4ade80',
+                                border: '1px solid rgba(34, 197, 94, 0.3)',
+                                borderRadius: 6,
+                                padding: '5px 8px',
+                                fontSize: 11,
+                                fontWeight: 600,
+                                cursor: isRestoring ? 'wait' : 'pointer',
+                              }}
+                            >
+                              <RefreshCw size={11} className={isRestoring ? 'spin' : ''} />
+                              <span>{isRestoring ? '...' : 'Restore'}</span>
+                            </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteVersion(ver.id, ver.version_name)}
-                                  disabled={isDeleting}
-                                  title="Delete this version from server storage"
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    background: 'rgba(239, 68, 68, 0.15)',
-                                    color: '#f87171',
-                                    border: '1px solid rgba(239, 68, 68, 0.25)',
-                                    borderRadius: 6,
-                                    padding: '5px 7px',
-                                    cursor: isDeleting ? 'wait' : 'pointer',
-                                  }}
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </>
-                            ) : (
-                              <span style={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', padding: '4px 6px' }}>
-                                Host Only
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteVersion(ver.id, ver.version_name)}
+                              disabled={isDeleting}
+                              title="Delete this version from server storage"
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: 'rgba(239, 68, 68, 0.15)',
+                                color: '#f87171',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                borderRadius: 6,
+                                padding: '5px 7px',
+                                cursor: isDeleting ? 'wait' : 'pointer',
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
                           </div>
                         </div>
                       );

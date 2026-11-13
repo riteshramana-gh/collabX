@@ -9,8 +9,6 @@ interface ChatSidePanelProps {
   currentUserId: string;
   isOpen: boolean;
   onClose: () => void;
-  isHost?: boolean;
-  isAuthenticated?: boolean;
 }
 
 export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
@@ -19,15 +17,11 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
   currentUserId,
   isOpen,
   onClose,
-  isHost = false,
-  isAuthenticated = true,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [targetScope, setTargetScope] = useState<string>('EVERYONE');
   const [participants, setParticipants] = useState<RoomParticipant[]>([]);
-  const [chatPolicy, setChatPolicy] = useState<'EVERYONE' | 'HOST_ONLY' | 'NO_DIRECT' | 'DISABLED'>('EVERYONE');
-  const [chatErrorMessage, setChatErrorMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -46,26 +40,11 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
     const unsubHistory = conn.on('CHAT_HISTORY_RES', (envelope) => {
       const history = (envelope.payload?.messages || []) as ChatMessage[];
       setMessages(history);
-      if (envelope.payload?.chat_policy) {
-        setChatPolicy(envelope.payload.chat_policy);
-      }
     });
 
     const unsubBroadcast = conn.on('CHAT_MSG_BROADCAST', (envelope) => {
       const newMsg = envelope.payload as ChatMessage;
       setMessages((prev) => [...prev, newMsg]);
-    });
-
-    const unsubPolicy = conn.on('ROOM_CHAT_POLICY_CHANGED', (envelope) => {
-      if (envelope.payload?.chat_policy) {
-        setChatPolicy(envelope.payload.chat_policy);
-      }
-    });
-
-    const unsubChatError = conn.on('CHAT_ERROR', (envelope) => {
-      const errorMsg = envelope.payload?.message || 'Chat message failed';
-      setChatErrorMessage(errorMsg);
-      setTimeout(() => setChatErrorMessage(null), 4000);
     });
 
     const unsubRoster = conn.on('PRESENCE_ROSTER_RES', (envelope) => {
@@ -84,24 +63,11 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
     return () => {
       unsubHistory();
       unsubBroadcast();
-      unsubPolicy();
-      unsubChatError();
       unsubRoster();
       unsubJoined();
       unsubLeft();
     };
   }, [conn]);
-
-  // Adjust target scope automatically when policy changes
-  useEffect(() => {
-    if (!isHost) {
-      if (chatPolicy === 'HOST_ONLY') {
-        setTargetScope('HOST_ONLY');
-      } else if (chatPolicy === 'NO_DIRECT' && targetScope.startsWith('DIRECT:')) {
-        setTargetScope('EVERYONE');
-      }
-    }
-  }, [chatPolicy, isHost, targetScope]);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -174,7 +140,7 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '14px 18px',
+          padding: '16px 20px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
         }}
       >
@@ -182,122 +148,23 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
           <MessageSquare size={18} color="#38bdf8" />
           <span>Room Discussion</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isHost ? (
-            <select
-              value={chatPolicy}
-              onChange={(e) => {
-                const newPol = e.target.value as any;
-                setChatPolicy(newPol);
-                conn.send('HOST_SET_CHAT_POLICY', { policy: newPol });
-              }}
-              title="Host Chat Restriction Policy"
-              style={{
-                background: '#0f172a',
-                border: '1px solid rgba(56, 189, 248, 0.4)',
-                borderRadius: 6,
-                color: '#38bdf8',
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '3px 6px',
-                cursor: 'pointer',
-                outline: 'none',
-              }}
-            >
-              <option value="EVERYONE">🌐 Everyone & Direct</option>
-              <option value="HOST_ONLY">👑 Host Only</option>
-              <option value="NO_DIRECT">📢 Public Only</option>
-              <option value="DISABLED">🚫 Chat Disabled</option>
-            </select>
-          ) : chatPolicy !== 'EVERYONE' ? (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: 6,
-                background:
-                  chatPolicy === 'DISABLED'
-                    ? 'rgba(239, 68, 68, 0.2)'
-                    : chatPolicy === 'HOST_ONLY'
-                    ? 'rgba(245, 158, 11, 0.2)'
-                    : 'rgba(168, 85, 247, 0.2)',
-                color:
-                  chatPolicy === 'DISABLED'
-                    ? '#f87171'
-                    : chatPolicy === 'HOST_ONLY'
-                    ? '#fbbf24'
-                    : '#c084fc',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-              }}
-            >
-              {chatPolicy === 'DISABLED' ? 'Disabled' : chatPolicy === 'HOST_ONLY' ? 'Host Only' : 'Public Only'}
-            </span>
-          ) : null}
-          <button
-            onClick={onClose}
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
-              borderRadius: 6,
-              color: '#94a3b8',
-              cursor: 'pointer',
-              padding: 5,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <X size={16} />
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          style={{
+            background: 'rgba(255, 255, 255, 0.08)',
+            border: 'none',
+            borderRadius: 6,
+            color: '#94a3b8',
+            cursor: 'pointer',
+            padding: 5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <X size={16} />
+        </button>
       </div>
-
-      {chatErrorMessage && (
-        <div
-          style={{
-            background: 'rgba(239, 68, 68, 0.25)',
-            borderBottom: '1px solid rgba(239, 68, 68, 0.4)',
-            color: '#fca5a5',
-            padding: '6px 12px',
-            fontSize: 11,
-            fontWeight: 600,
-            textAlign: 'center',
-          }}
-        >
-          {chatErrorMessage}
-        </div>
-      )}
-      {!isHost && chatPolicy === 'HOST_ONLY' && (
-        <div
-          style={{
-            background: 'rgba(245, 158, 11, 0.15)',
-            borderBottom: '1px solid rgba(245, 158, 11, 0.3)',
-            color: '#fbbf24',
-            padding: '5px 12px',
-            fontSize: 10,
-            fontWeight: 600,
-            textAlign: 'center',
-          }}
-        >
-          👑 Host-Only Mode: Messages can only be sent privately to the Room Host.
-        </div>
-      )}
-      {!isHost && chatPolicy === 'NO_DIRECT' && (
-        <div
-          style={{
-            background: 'rgba(168, 85, 247, 0.15)',
-            borderBottom: '1px solid rgba(168, 85, 247, 0.3)',
-            color: '#c084fc',
-            padding: '5px 12px',
-            fontSize: 10,
-            fontWeight: 600,
-            textAlign: 'center',
-          }}
-        >
-          📢 Public Chat Only: Direct 1-on-1 participant messaging is disabled by Host.
-        </div>
-      )}
 
       {/* Messages Stream */}
       <div
@@ -457,7 +324,6 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
           <span style={{ fontSize: 11, fontWeight: 600, color: '#94a3b8' }}>Send to:</span>
           <select
             value={targetScope}
-            disabled={!isHost && chatPolicy === 'DISABLED'}
             onChange={(e) => setTargetScope(e.target.value)}
             style={{
               flex: 1,
@@ -469,104 +335,65 @@ export const ChatSidePanel: React.FC<ChatSidePanelProps> = ({
               fontWeight: 600,
               padding: '4px 8px',
               outline: 'none',
-              cursor: !isHost && chatPolicy === 'DISABLED' ? 'not-allowed' : 'pointer',
+              cursor: 'pointer',
             }}
           >
-            {!isHost && chatPolicy === 'HOST_ONLY' ? (
-              <option value="HOST_ONLY">👑 Room Host (Private)</option>
-            ) : (
-              <>
-                <option value="EVERYONE">👥 Everyone (Public)</option>
-                <option value="HOST_ONLY">👑 Room Host (Private)</option>
-                {(isHost || chatPolicy === 'EVERYONE') &&
-                  participants
-                    .filter((p) => p.session_id !== currentUserId)
-                    .map((p) => (
-                      <option key={p.session_id} value={`DIRECT:${p.session_id}`}>
-                        🔒 {p.display_name} (Direct)
-                      </option>
-                    ))}
-              </>
-            )}
+            <option value="EVERYONE">👥 Everyone (Public)</option>
+            <option value="HOST_ONLY">👑 Room Host (Private)</option>
+            {participants
+              .filter((p) => p.session_id !== currentUserId)
+              .map((p) => (
+                <option key={p.session_id} value={`DIRECT:${p.session_id}`}>
+                  🔒 {p.display_name} (Direct)
+                </option>
+              ))}
           </select>
         </div>
 
-        {/* Input & Send Button or Disabled Notice */}
-        {!isHost && !isAuthenticated ? (
-          <div
+        {/* Input & Send Button */}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder={
+              targetScope === 'EVERYONE'
+                ? 'Type message to everyone...'
+                : targetScope === 'HOST_ONLY'
+                ? 'Private message to Host...'
+                : 'Direct message...'
+            }
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
             style={{
-              padding: '10px 12px',
+              flex: 1,
+              padding: '9px 12px',
               borderRadius: 8,
-              background: 'rgba(56, 189, 248, 0.1)',
-              border: '1px solid rgba(56, 189, 248, 0.25)',
-              color: '#38bdf8',
-              fontSize: 12,
-              fontWeight: 600,
-              textAlign: 'center',
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              color: '#ffffff',
+              fontSize: 13,
+              outline: 'none',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!inputText.trim()}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0 14px',
+              borderRadius: 8,
+              background: inputText.trim() ? '#3b82f6' : '#334155',
+              color: '#ffffff',
+              border: 'none',
+              cursor: inputText.trim() ? 'pointer' : 'default',
+              transition: 'all 0.15s ease',
             }}
           >
-            🔒 Spectator View: Sign in to send messages in chat.
-          </div>
-        ) : !isHost && chatPolicy === 'DISABLED' ? (
-          <div
-            style={{
-              padding: '10px 12px',
-              borderRadius: 8,
-              background: 'rgba(239, 68, 68, 0.12)',
-              border: '1px solid rgba(239, 68, 68, 0.3)',
-              color: '#f87171',
-              fontSize: 12,
-              fontWeight: 600,
-              textAlign: 'center',
-            }}
-          >
-            🚫 Chat messaging is disabled by the Room Host.
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              ref={inputRef}
-              type="text"
-              placeholder={
-                targetScope === 'EVERYONE'
-                  ? 'Type message to everyone...'
-                  : targetScope === 'HOST_ONLY'
-                  ? 'Private message to Host...'
-                  : 'Direct message...'
-              }
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '9px 12px',
-                borderRadius: 8,
-                background: '#0f172a',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                color: '#ffffff',
-                fontSize: 13,
-                outline: 'none',
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!inputText.trim()}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '0 14px',
-                borderRadius: 8,
-                background: inputText.trim() ? '#3b82f6' : '#334155',
-                color: '#ffffff',
-                border: 'none',
-                cursor: inputText.trim() ? 'pointer' : 'default',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Send size={15} />
-            </button>
-          </div>
-        )}
+            <Send size={15} />
+          </button>
+        </div>
       </form>
     </div>
   );

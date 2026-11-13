@@ -54,24 +54,6 @@ async def websocket_endpoint(
                 if not envelope.room_id and room_id:
                     envelope.room_id = room_id
 
-                # Enforce room ban check if user was kicked
-                host_mod = context.modules.get("host_control")
-                if host_mod and room_id and host_mod.is_user_banned(room_id, session):
-                    logger.warning(f"[WebSocket] Ejecting banned user {session_id} from room {room_id}")
-                    try:
-                        await session.send_envelope(
-                            MessageEnvelope(
-                                room_id=room_id,
-                                sender_id="server",
-                                type="HOST_USER_KICKED",
-                                payload={"reason": "You have been removed from this room by the host."},
-                            )
-                        )
-                    except Exception:
-                        pass
-                    await session.close(code=1008, reason="Removed by host")
-                    break
-
                 # Dispatch envelope to registered handlers
                 asyncio.create_task(context.event_bus.dispatch(session, envelope))
             except ProtocolError as e:

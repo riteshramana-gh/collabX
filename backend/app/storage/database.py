@@ -87,27 +87,6 @@ CREATE TABLE IF NOT EXISTS saved_notebook_versions (
 
 CREATE INDEX IF NOT EXISTS idx_saved_notebooks_owner 
 ON saved_notebook_versions(owner_key, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS users (
-    username TEXT PRIMARY KEY COLLATE NOCASE,
-    password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL,
-    display_name TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS user_sessions (
-    token TEXT PRIMARY KEY,
-    username TEXT NOT NULL COLLATE NOCASE,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
-    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_user_sessions_token 
-ON user_sessions(token);
-CREATE INDEX IF NOT EXISTS idx_user_sessions_user 
-ON user_sessions(username);
 """
 
 

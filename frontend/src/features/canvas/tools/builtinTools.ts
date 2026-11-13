@@ -7,53 +7,13 @@ function createId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 10);
 }
 
-function getResizeHandleAtPoint(
-  elem: CanvasElement,
-  point: Point
-): 'nw' | 'ne' | 'se' | 'sw' | null {
-  const b = RendererRegistry.getBounds(elem);
-  const pad = 6;
-  const radius = 14; // 14px hit radius around each corner handle center
-
-  const handles: Array<{ id: 'nw' | 'ne' | 'se' | 'sw'; x: number; y: number }> = [
-    { id: 'nw', x: b.minX - pad, y: b.minY - pad },
-    { id: 'ne', x: b.maxX + pad, y: b.minY - pad },
-    { id: 'se', x: b.maxX + pad, y: b.maxY + pad },
-    { id: 'sw', x: b.minX - pad, y: b.maxY + pad },
-  ];
-
-  for (const h of handles) {
-    if (Math.hypot(point.x - h.x, point.y - h.y) <= radius) {
-      return h.id;
-    }
-  }
-  return null;
-}
-
 // 1. SELECT & TRANSFORM TOOL (Single & Multi-select, Move, Resize, Rotate)
 export const SelectTool: CanvasTool = {
   id: 'select',
-  name: 'Select / Move / Resize',
+  name: 'Select / Move',
   iconName: 'MousePointer',
   cursor: 'default',
   onPointerDown(ctx: CanvasToolContext, point: Point) {
-    // 1. Check if clicking on a corner resize handle of currently selected element
-    const selId = ctx.selectedElementId;
-    const selElem = selId ? ctx.elements.get(selId) : null;
-    if (selElem && !selElem.is_locked) {
-      const handle = getResizeHandleAtPoint(selElem, point);
-      if (handle) {
-        const b = RendererRegistry.getBounds(selElem);
-        (this as any)._mode = 'resize';
-        (this as any)._activeHandle = handle;
-        (this as any)._dragStart = point;
-        (this as any)._initialPos = { ...selElem };
-        (this as any)._initialBounds = { ...b };
-        return;
-      }
-    }
-
-    // 2. Otherwise hit-test page elements (topmost first)
     let hitId: string | null = null;
     const pageElements = Array.from(ctx.elements.values())
       .filter((el) => el.page_id === ctx.activePageId)
@@ -73,83 +33,26 @@ export const SelectTool: CanvasTool = {
       ctx.setSelectedElementIds(selSet);
 
       const target = ctx.elements.get(hitId);
-      (this as any)._mode = 'move';
-      (this as any)._activeHandle = null;
       (this as any)._dragStart = point;
       (this as any)._initialPos = target ? { ...target } : null;
-      (this as any)._initialBounds = null;
     } else {
       ctx.setSelectedElementId(null);
       ctx.setSelectedElementIds(new Set());
-      (this as any)._mode = null;
-      (this as any)._activeHandle = null;
       (this as any)._dragStart = null;
       (this as any)._initialPos = null;
-      (this as any)._initialBounds = null;
     }
   },
   onPointerMove(ctx: CanvasToolContext, point: Point) {
     const selId = ctx.selectedElementId;
-    const mode = (this as any)._mode;
     const start = (this as any)._dragStart;
     const initial = (this as any)._initialPos;
 
-    if (!selId || !start || !initial || initial.is_locked) return;
+    if (selId && start && initial) {
+      if (initial.is_locked) return; // Prevent moving locked element
 
-    const dx = point.x - start.x;
-    const dy = point.y - start.y;
-
-    if (mode === 'resize') {
-      const handle = (this as any)._activeHandle;
-      const ib = (this as any)._initialBounds;
-      if (!ib) return;
-
-      let newMinX = ib.minX;
-      let newMinY = ib.minY;
-      let newMaxX = ib.maxX;
-      let newMaxY = ib.maxY;
-
-      if (handle === 'se') {
-        newMaxX = Math.max(ib.minX + 24, ib.maxX + dx);
-        newMaxY = Math.max(ib.minY + 24, ib.maxY + dy);
-      } else if (handle === 'sw') {
-        newMinX = Math.min(ib.maxX - 24, ib.minX + dx);
-        newMaxY = Math.max(ib.minY + 24, ib.maxY + dy);
-      } else if (handle === 'ne') {
-        newMaxX = Math.max(ib.minX + 24, ib.maxX + dx);
-        newMinY = Math.min(ib.maxY - 24, ib.minY + dy);
-      } else if (handle === 'nw') {
-        newMinX = Math.min(ib.maxX - 24, ib.minX + dx);
-        newMinY = Math.min(ib.maxY - 24, ib.minY + dy);
-      }
-
-      const newW = Math.round(newMaxX - newMinX);
-      const newH = Math.round(newMaxY - newMinY);
-      const newX = Math.round(newMinX);
-      const newY = Math.round(newMinY);
-
-      const preview: CanvasElement = {
-        ...initial,
-        x: newX,
-        y: newY,
-        width: newW,
-        height: newH,
-      };
-
-      if (initial.points && initial.points.length > 0) {
-        const origW = Math.max(1, ib.maxX - ib.minX);
-        const origH = Math.max(1, ib.maxY - ib.minY);
-        const scaleX = newW / origW;
-        const scaleY = newH / origH;
-        preview.points = initial.points.map(([px, py]: [number, number]) => [
-          newX + (px - ib.minX) * scaleX,
-          newY + (py - ib.minY) * scaleY,
-        ]);
-      }
-
-      ctx.setPreviewElement(preview);
-    } else if (mode === 'move') {
-      const preview: CanvasElement = {
+      const dx = point.x - start.x;
+      const dy = point.y - start.y;
+      const preview = {
         ...initial,
         x: initial.x + dx,
         y: initial.y + dy,
@@ -162,92 +65,31 @@ export const SelectTool: CanvasTool = {
   },
   onPointerUp(ctx: CanvasToolContext, point: Point) {
     const selId = ctx.selectedElementId;
-    const mode = (this as any)._mode;
     const start = (this as any)._dragStart;
     const initial = (this as any)._initialPos;
 
     if (selId && start && initial && !initial.is_locked) {
       const dx = point.x - start.x;
       const dy = point.y - start.y;
-
-      if (mode === 'resize') {
-        const handle = (this as any)._activeHandle;
-        const ib = (this as any)._initialBounds;
-        if (ib && (Math.abs(dx) > 1 || Math.abs(dy) > 1)) {
-          let newMinX = ib.minX;
-          let newMinY = ib.minY;
-          let newMaxX = ib.maxX;
-          let newMaxY = ib.maxY;
-
-          if (handle === 'se') {
-            newMaxX = Math.max(ib.minX + 24, ib.maxX + dx);
-            newMaxY = Math.max(ib.minY + 24, ib.maxY + dy);
-          } else if (handle === 'sw') {
-            newMinX = Math.min(ib.maxX - 24, ib.minX + dx);
-            newMaxY = Math.max(ib.minY + 24, ib.maxY + dy);
-          } else if (handle === 'ne') {
-            newMaxX = Math.max(ib.minX + 24, ib.maxX + dx);
-            newMinY = Math.min(ib.maxY - 24, ib.minY + dy);
-          } else if (handle === 'nw') {
-            newMinX = Math.min(ib.maxX - 24, ib.minX + dx);
-            newMinY = Math.min(ib.maxY - 24, ib.minY + dy);
-          }
-
-          const newW = Math.round(newMaxX - newMinX);
-          const newH = Math.round(newMaxY - newMinY);
-          const newX = Math.round(newMinX);
-          const newY = Math.round(newMinY);
-
-          const patch: Partial<CanvasElement> = {
-            x: newX,
-            y: newY,
-            width: newW,
-            height: newH,
-          };
-
-          if (initial.points && initial.points.length > 0) {
-            const origW = Math.max(1, ib.maxX - ib.minX);
-            const origH = Math.max(1, ib.maxY - ib.minY);
-            const scaleX = newW / origW;
-            const scaleY = newH / origH;
-            patch.points = initial.points.map(([px, py]: [number, number]) => [
-              newX + (px - ib.minX) * scaleX,
-              newY + (py - ib.minY) * scaleY,
-            ]);
-          }
-
-          ctx.commitOperation({
-            client_op_id: createId(),
-            op_type: 'UPDATE',
-            element_id: selId,
-            patch,
-          });
+      if (Math.hypot(dx, dy) > 2) {
+        const patch: Partial<CanvasElement> = {
+          x: initial.x + dx,
+          y: initial.y + dy,
+        };
+        if (initial.points) {
+          patch.points = initial.points.map(([px, py]: [number, number]) => [px + dx, py + dy]);
         }
-      } else if (mode === 'move') {
-        if (Math.hypot(dx, dy) > 2) {
-          const patch: Partial<CanvasElement> = {
-            x: initial.x + dx,
-            y: initial.y + dy,
-          };
-          if (initial.points) {
-            patch.points = initial.points.map(([px, py]: [number, number]) => [px + dx, py + dy]);
-          }
-          ctx.commitOperation({
-            client_op_id: createId(),
-            op_type: 'UPDATE',
-            element_id: selId,
-            patch,
-          });
-        }
+        ctx.commitOperation({
+          client_op_id: createId(),
+          op_type: 'UPDATE',
+          element_id: selId,
+          patch,
+        });
       }
       ctx.setPreviewElement(null);
     }
-
-    (this as any)._mode = null;
-    (this as any)._activeHandle = null;
     (this as any)._dragStart = null;
     (this as any)._initialPos = null;
-    (this as any)._initialBounds = null;
   },
 };
 
@@ -907,44 +749,40 @@ export const TriangleTool: CanvasTool = {
   },
 };
 
-// 7. TEXT TOOL (Font Family, Size, Styling) - Interactive In-Canvas Text Box
+// 7. TEXT TOOL (Font Family, Size, Styling)
 export const TextTool: CanvasTool = {
   id: 'text',
   name: 'Text Box',
   iconName: 'Type',
   cursor: 'text',
   onPointerDown(ctx, point) {
-    const elem: CanvasElement = {
-      id: createId(),
-      page_id: ctx.activePageId,
-      type: 'TEXT',
-      x: point.x,
-      y: point.y,
-      width: 220,
-      height: 80,
-      text: '',
-      font_family: ctx.activeFontFamily || 'sans-serif',
-      font_size: ctx.activeFontSize || 18,
-      font_weight: ctx.activeFontWeight || 'normal',
-      font_style: ctx.activeFontStyle || 'normal',
-      text_align: ctx.activeTextAlign || 'left',
-      stroke_color: ctx.activeStrokeColor || '#0f172a',
-      fill_color: '#ffffff',
-      stroke_width: 1,
-      z_index: ctx.elements.size + 1,
-      version: 1,
-      created_by: ctx.currentUserId,
-      last_modified_by: ctx.currentUserId,
-      last_modified_at: Date.now(),
-    };
-    ctx.commitOperation({
-      client_op_id: createId(),
-      op_type: 'ADD',
-      element: elem,
-    });
-    ctx.setSelectedElementId(elem.id);
-    if (ctx.openInlineTextEditor) {
-      ctx.openInlineTextEditor(elem);
+    const text = prompt('Enter text for page:');
+    if (text && text.trim().length > 0) {
+      const elem: CanvasElement = {
+        id: createId(),
+        page_id: ctx.activePageId,
+        type: 'TEXT',
+        x: point.x,
+        y: point.y,
+        text: text.trim(),
+        font_family: ctx.activeFontFamily || 'sans-serif',
+        font_size: ctx.activeFontSize || 18,
+        font_weight: ctx.activeFontWeight || 'normal',
+        font_style: ctx.activeFontStyle || 'normal',
+        text_align: ctx.activeTextAlign || 'left',
+        stroke_color: ctx.activeStrokeColor,
+        stroke_width: 1,
+        z_index: ctx.elements.size + 1,
+        version: 1,
+        created_by: ctx.currentUserId,
+        last_modified_by: ctx.currentUserId,
+        last_modified_at: Date.now(),
+      };
+      ctx.commitOperation({
+        client_op_id: createId(),
+        op_type: 'ADD',
+        element: elem,
+      });
     }
   },
   onPointerMove() {},
