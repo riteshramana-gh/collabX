@@ -41,33 +41,30 @@ export class ShapeRecognizer {
     const height = maxY - minY;
     const diag = Math.hypot(width, height);
 
-    const isClosed = totalDist < Math.max(25, diag * 0.2);
+    // Stroke closure check: distance between endpoints vs diagonal or path length
+    const isClosed = totalDist < Math.max(38, diag * 0.32) || totalDist / pathLength < 0.28;
 
     // Case 1: Open Strokes (Straight Line or Arrow)
     if (!isClosed) {
-      // Line straightness check: ratio of direct distance to path length
-      const straightness = totalDist / pathLength;
-      if (straightness > 0.88) {
-        return {
-          type: 'LINE',
-          x: start[0],
-          y: start[1],
-          width: end[0] - start[0],
-          height: end[1] - start[1],
-        };
-      }
-
-      // Check for Arrow: straight shaft with an arrowhead near the end
-      const shaftPoints = points.slice(0, Math.floor(points.length * 0.75));
+      // 1. Check for Arrow: straight shaft (~72% of stroke) followed by an arrowhead (~28%)
+      const shaftCount = Math.floor(points.length * 0.72);
+      const shaftPoints = points.slice(0, shaftCount);
       let shaftLen = 0;
-      for (let i = 1; i < shaftLen; i++) {
+      for (let i = 1; i < shaftPoints.length; i++) {
         shaftLen += Math.hypot(shaftPoints[i][0] - shaftPoints[i - 1][0], shaftPoints[i][1] - shaftPoints[i - 1][1]);
       }
       const shaftDirect = Math.hypot(
         shaftPoints[shaftPoints.length - 1][0] - shaftPoints[0][0],
         shaftPoints[shaftPoints.length - 1][1] - shaftPoints[0][1]
       );
-      if (shaftLen > 20 && shaftDirect / shaftLen > 0.85) {
+
+      const headPoints = points.slice(shaftCount);
+      let headLen = 0;
+      for (let i = 1; i < headPoints.length; i++) {
+        headLen += Math.hypot(headPoints[i][0] - headPoints[i - 1][0], headPoints[i][1] - headPoints[i - 1][1]);
+      }
+
+      if (shaftLen > 25 && shaftDirect / shaftLen > 0.82 && headLen > 8) {
         return {
           type: 'ARROW',
           x: start[0],
@@ -76,22 +73,52 @@ export class ShapeRecognizer {
           height: end[1] - start[1],
         };
       }
+
+      // 2. Line straightness check: ratio of direct distance to path length
+      const straightness = totalDist / pathLength;
+      if (straightness > 0.84) {
+        let dx = end[0] - start[0];
+        let dy = end[1] - start[1];
+
+        // Snapping: Horizontal snap (< 6 degrees deviation)
+        if (Math.abs(dy) / Math.max(1, Math.abs(dx)) < 0.1) {
+          dy = 0;
+        }
+        // Vertical snap (< 6 degrees deviation)
+        else if (Math.abs(dx) / Math.max(1, Math.abs(dy)) < 0.1) {
+          dx = 0;
+        }
+        // 45-degree diagonal snap
+        else if (Math.abs(Math.abs(dx) - Math.abs(dy)) / Math.max(1, Math.hypot(dx, dy)) < 0.1) {
+          const avg = (Math.abs(dx) + Math.abs(dy)) / 2;
+          dx = Math.sign(dx) * avg;
+          dy = Math.sign(dy) * avg;
+        }
+
+        return {
+          type: 'LINE',
+          x: start[0],
+          y: start[1],
+          width: dx,
+          height: dy,
+        };
+      }
     }
 
     // Case 2: Closed Shapes (Circle, Ellipse, Rectangle, Triangle, Polygon)
-    if (isClosed && diag > 40) {
+    if (isClosed && diag > 35) {
       // Estimate polygon vertices by identifying sharp direction changes (corners)
-      const simplified = this.douglasPeucker(points, Math.max(6, diag * 0.05));
+      const simplified = this.douglasPeucker(points, Math.max(8, diag * 0.06));
       const cornerCount = simplified.length - 1; // Last equals first
 
-      // 1. Circle or Ellipse (Round contour, smooth curvature)
+      // Calculate ellipse fit variance
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
-      const rx = width / 2;
-      const ry = height / 2;
+      const rx = Math.max(1, width / 2);
+      const ry = Math.max(1, height / 2);
 
       let ellipseFitVariance = 0;
-      const sampleStep = Math.max(1, Math.floor(points.length / 20));
+      const sampleStep = Math.max(1, Math.floor(points.length / 25));
       let sampleCount = 0;
 
       for (let i = 0; i < points.length; i += sampleStep) {
@@ -101,16 +128,30 @@ export class ShapeRecognizer {
         ellipseFitVariance += Math.abs(norm - 1.0);
         sampleCount++;
       }
-      const avgEllipseVariance = ellipseFitVariance / sampleCount;
+      const avgEllipseVariance = ellipseFitVariance / Math.max(1, sampleCount);
 
-      if (avgEllipseVariance < 0.22 && cornerCount >= 5) {
-        // Fits circle or ellipse!
-        const isCircle = Math.abs(width - height) / Math.max(width, height) < 0.15;
+      // Calculate average distance of points to the bounding box perimeter
+      let edgeDistSum = 0;
+      for (let i = 0; i < points.length; i += sampleStep) {
+        const px = points[i][0];
+        const py = points[i][1];
+        const dLeft = Math.abs(px - minX);
+        const dRight = Math.abs(px - maxX);
+        const dTop = Math.abs(py - minY);
+        const dBottom = Math.abs(py - maxY);
+        edgeDistSum += Math.min(dLeft, dRight, dTop, dBottom);
+      }
+      const avgEdgeDist = edgeDistSum / Math.max(1, sampleCount);
+      const edgeDistRatio = avgEdgeDist / Math.max(1, Math.min(width, height));
+
+      // 1. Circle or Ellipse (Smooth curvature, fits ellipse equation with low variance)
+      if (avgEllipseVariance < 0.28) {
+        const isCircle = Math.abs(width - height) / Math.max(width, height) < 0.18;
         const finalDim = isCircle ? Math.max(width, height) : undefined;
         return {
           type: 'ELLIPSE',
-          x: minX,
-          y: minY,
+          x: isCircle ? cx - finalDim! / 2 : minX,
+          y: isCircle ? cy - finalDim! / 2 : minY,
           width: finalDim || width,
           height: finalDim || height,
         };
@@ -127,21 +168,25 @@ export class ShapeRecognizer {
         };
       }
 
-      // 3. Rectangle / Square (4 dominant corners)
-      if (cornerCount === 4) {
-        const isSquare = Math.abs(width - height) / Math.max(width, height) < 0.12;
+      // 3. Rectangle / Square
+      // Matches if 4 sharp corners OR points hug the bounding box edges tightly
+      const isRectCorners = cornerCount === 4;
+      const isRectEdgeFit = edgeDistRatio < 0.16 && cornerCount >= 4 && cornerCount <= 8;
+
+      if (isRectCorners || isRectEdgeFit) {
+        const isSquare = Math.abs(width - height) / Math.max(width, height) < 0.18;
         const finalDim = isSquare ? Math.max(width, height) : undefined;
         return {
           type: 'RECTANGLE',
-          x: minX,
-          y: minY,
+          x: isSquare ? cx - finalDim! / 2 : minX,
+          y: isSquare ? cy - finalDim! / 2 : minY,
           width: finalDim || width,
           height: finalDim || height,
         };
       }
 
-      // 4. Polygon / Star
-      if (cornerCount >= 5 && cornerCount <= 8 && avgEllipseVariance >= 0.22) {
+      // 4. Polygon / Star (5 to 8 corners)
+      if (cornerCount >= 5 && cornerCount <= 8) {
         return {
           type: 'POLYGON',
           x: minX,

@@ -1,7 +1,7 @@
 """WebRTC Voice Signaling Feature Module."""
 
 import logging
-from typing import List
+from typing import Dict, List
 from app.modules.base import FeatureModule
 from app.core.context import ApplicationContext
 from app.engine.event_bus import EventRegistry
@@ -24,6 +24,8 @@ class VoiceSignalingModule(FeatureModule):
 
     async def initialize(self, context: ApplicationContext) -> None:
         self.context = context
+        # room_id -> { session_id -> state_data }
+        self.room_voice_peers: Dict[str, Dict[str, dict]] = {}
         logger.info("VoiceSignalingModule initialized")
 
     def register_events(self, registry: EventRegistry) -> None:
@@ -31,6 +33,7 @@ class VoiceSignalingModule(FeatureModule):
         registry.register("VOICE_SIGNAL_ANSWER", self.handle_answer)
         registry.register("VOICE_SIGNAL_ICE", self.handle_ice)
         registry.register("VOICE_STATE_UPDATE", self.handle_voice_state)
+        registry.register("VOICE_ROSTER_REQ", self.handle_voice_roster_req)
 
     async def handle_offer(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Forwards WebRTC SDP Offer to the target peer."""
@@ -91,15 +94,25 @@ class VoiceSignalingModule(FeatureModule):
             await target_session.send_envelope(forward_env)
 
     async def handle_voice_state(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Broadcasts mute, deafen, or speaking state changes to the room."""
+        """Broadcasts mute, deafen, or speaking state changes to the room and tracks active peers."""
         room_id = envelope.room_id
+        is_active = envelope.payload.get("is_active", True)
         state_data = {
             "session_id": session.session_id,
             "display_name": session.display_name or "Anonymous",
+            "is_active": is_active,
             "is_muted": envelope.payload.get("is_muted", False),
             "is_deafened": envelope.payload.get("is_deafened", False),
             "is_speaking": envelope.payload.get("is_speaking", False),
         }
+
+        if room_id not in self.room_voice_peers:
+            self.room_voice_peers[room_id] = {}
+
+        if is_active:
+            self.room_voice_peers[room_id][session.session_id] = state_data
+        else:
+            self.room_voice_peers[room_id].pop(session.session_id, None)
 
         broadcast_env = MessageEnvelope(
             room_id=room_id,
@@ -109,5 +122,20 @@ class VoiceSignalingModule(FeatureModule):
         )
         await self.context.connection_manager.broadcast_to_room(room_id, broadcast_env)
 
+    async def handle_voice_roster_req(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Returns the active voice participants for the room."""
+        room_id = envelope.room_id
+        active_peers = list(self.room_voice_peers.get(room_id, {}).values())
+        await session.send_envelope(
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="VOICE_ROSTER_RES",
+                client_seq=envelope.client_seq,
+                payload={"peers": active_peers},
+            )
+        )
+
     async def shutdown(self) -> None:
+        self.room_voice_peers.clear()
         logger.info("VoiceSignalingModule shutdown cleanly")

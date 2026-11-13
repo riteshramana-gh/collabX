@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CanvasStore } from '../state/CanvasStore';
 import { ToolRegistry, CanvasToolContext, Point } from '../registry/ToolRegistry';
 import { RendererRegistry } from '../registry/RendererRegistry';
-import { ZoomIn, ZoomOut, Maximize2, Edit2, X, Check } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, Edit2, X, Check, Home } from 'lucide-react';
 
 function isDarkColor(hex: string): boolean {
   if (!hex || hex === 'transparent') return false;
@@ -41,6 +41,19 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
   } | null>(null);
   const [editingText, setEditingText] = useState<string>('');
 
+  const openInlineTextEditor = useCallback((elem: any) => {
+    setEditingElement({
+      id: elem.id,
+      text: elem.text || '',
+      fillColor: elem.fill_color || (elem.type === 'STICKER' ? '#fef08a' : '#ffffff'),
+      x: elem.x,
+      y: elem.y,
+      width: elem.width || 240,
+      height: elem.height || 60,
+    });
+    setEditingText(elem.text || '');
+  }, []);
+
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (isReadOnly) return;
     const worldPoint = screenToWorld(e.clientX, e.clientY);
@@ -51,16 +64,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
     for (const elem of pageElements) {
       if (RendererRegistry.hitTest(elem, worldPoint)) {
         if (elem.type === 'STICKER' || elem.type === 'TEXT') {
-          setEditingElement({
-            id: elem.id,
-            text: elem.text || '',
-            fillColor: elem.fill_color || '#fef08a',
-            x: elem.x,
-            y: elem.y,
-            width: elem.width || 160,
-            height: elem.height || 140,
-          });
-          setEditingText(elem.text || '');
+          openInlineTextEditor(elem);
           store.setSelectedElementId(elem.id);
           return;
         }
@@ -70,7 +74,24 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
 
   const handleSaveEditing = () => {
     if (editingElement) {
-      store.updateElementText(editingElement.id, editingText);
+      const current = editingText.trim();
+      const el = store.getElements().get(editingElement.id);
+      if (!current && el && (!el.text || !el.text.trim())) {
+        store.deleteSelected();
+      } else {
+        store.updateElementText(editingElement.id, editingText);
+      }
+      setEditingElement(null);
+    }
+  };
+
+  const handleCancelEditing = () => {
+    if (editingElement) {
+      const current = editingText.trim();
+      const el = store.getElements().get(editingElement.id);
+      if (!current && el && (!el.text || !el.text.trim())) {
+        store.deleteSelected();
+      }
       setEditingElement(null);
     }
   };
@@ -332,6 +353,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
           store.setSelectedElementId(null);
         },
         addLaserPoint: (x, y) => store.addLaserPoint(x, y),
+        openInlineTextEditor,
       };
       activeTool.onPointerDown(toolCtx, worldPoint, e.nativeEvent);
     }
@@ -348,7 +370,32 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
       onCursorMove(worldPoint);
     }
 
-    if (!isPointerDownRef.current) return;
+    if (!isPointerDownRef.current) {
+      const canvas = canvasRef.current;
+      if (canvas && !isReadOnly) {
+        if (store.activeToolId === 'select' && store.selectedElementId) {
+          const selElem = store.getElements().get(store.selectedElementId);
+          if (selElem && !selElem.is_locked) {
+            const handle = RendererRegistry.hitTestTransformHandles(
+              selElem,
+              worldPoint,
+              Math.max(12, 14 / (store.zoom || 1))
+            );
+            if (handle) {
+              canvas.style.cursor = handle.cursor;
+              return;
+            }
+            if (RendererRegistry.hitTest(selElem, worldPoint)) {
+              canvas.style.cursor = 'move';
+              return;
+            }
+          }
+        }
+        const activeTool = ToolRegistry.get(store.activeToolId);
+        canvas.style.cursor = activeTool?.cursor || 'default';
+      }
+      return;
+    }
 
     const activeTool = ToolRegistry.get(store.activeToolId);
     if (activeTool) {
@@ -384,6 +431,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
           store.setSelectedElementId(null);
         },
         addLaserPoint: (x, y) => store.addLaserPoint(x, y),
+        openInlineTextEditor,
       };
       activeTool.onPointerMove(toolCtx, worldPoint, e.nativeEvent);
     }
@@ -440,6 +488,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
           store.setSelectedElementId(null);
         },
         addLaserPoint: (x, y) => store.addLaserPoint(x, y),
+        openInlineTextEditor,
       };
       activeTool.onPointerUp(toolCtx, worldPoint, e.nativeEvent);
     }
@@ -494,6 +543,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
               store.setSelectedElementId(null);
             },
             addLaserPoint: (x, y) => store.addLaserPoint(x, y),
+            openInlineTextEditor,
           };
           activeTool.onPointerUp(toolCtx, worldPoint, e);
         }
@@ -561,6 +611,25 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
     const centerY = (canvas.clientHeight - pageHeight * fitZoom) / 2 - 60 * fitZoom;
     store.setZoomAndPan(fitZoom, centerX, centerY);
   };
+
+  const handleHomeView = () => {
+    store.setPan(0, 0);
+    store.setZoom(1.0);
+  };
+
+  useEffect(() => {
+    const handleGlobalKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === 'Home') {
+        e.preventDefault();
+        handleHomeView();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, [store]);
 
   const activeTool = ToolRegistry.get(store.activeToolId);
   const cursorStyle = activeTool ? activeTool.cursor : 'default';
@@ -660,8 +729,8 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
             left: Math.max(12, Math.min(window.innerWidth - 280, editingElement.x * store.zoom + store.panX)),
             top: Math.max(50, Math.min(window.innerHeight - 220, editingElement.y * store.zoom + store.panY)),
             width: Math.max(220, (editingElement.width || 160) * store.zoom),
-            minHeight: Math.max(150, (editingElement.height || 140) * store.zoom),
-            background: editingElement.fillColor || '#fef08a',
+            minHeight: Math.max(130, (editingElement.height || 100) * store.zoom),
+            background: editingElement.fillColor && editingElement.fillColor !== 'transparent' ? editingElement.fillColor : '#ffffff',
             borderRadius: 10,
             boxShadow: '0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 2px #3b82f6',
             zIndex: 100,
@@ -675,10 +744,12 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              Edit Sticky Note
+              {editingElement.fillColor && editingElement.fillColor !== '#ffffff' && editingElement.fillColor !== 'transparent'
+                ? '📝 Sticky Note'
+                : '✏️ Text Box'}
             </span>
             <button
-              onClick={() => setEditingElement(null)}
+              onClick={handleCancelEditing}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -696,18 +767,18 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
             value={editingText}
             onChange={(e) => setEditingText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || (!editingElement.fillColor || editingElement.fillColor === '#ffffff'))) {
                 e.preventDefault();
                 handleSaveEditing();
               } else if (e.key === 'Escape') {
-                setEditingElement(null);
+                handleCancelEditing();
               }
             }}
-            placeholder="Type your note here..."
+            placeholder="Type your text here..."
             style={{
               flex: 1,
               width: '100%',
-              minHeight: 90,
+              minHeight: 80,
               background: 'transparent',
               border: 'none',
               resize: 'vertical',
@@ -722,7 +793,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginTop: 8, borderTop: '1px solid rgba(0,0,0,0.1)', paddingTop: 8 }}>
             <button
-              onClick={() => setEditingElement(null)}
+              onClick={handleCancelEditing}
               style={{
                 padding: '4px 10px',
                 borderRadius: 6,
@@ -753,7 +824,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
               }}
             >
               <Check size={13} />
-              <span>Save Note</span>
+              <span>Save</span>
             </button>
           </div>
         </div>
@@ -832,6 +903,21 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
         >
           <Maximize2 size={13} />
           <span>Fit</span>
+        </button>
+        <button
+          onClick={handleHomeView}
+          title="Return to Home (0, 0 at 100%)"
+          style={{
+            ...zoomBtnStyle,
+            gap: 4,
+            width: 'auto',
+            padding: '0 8px',
+            fontSize: 11,
+            color: '#38bdf8',
+          }}
+        >
+          <Home size={13} />
+          <span>Home</span>
         </button>
       </div>
     </div>

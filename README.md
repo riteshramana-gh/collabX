@@ -22,6 +22,25 @@ Built with **React 18 + TypeScript + Vite** on the frontend, **Python + FastAPI 
 
 ---
 
+## 5-Person Team Architecture & Project Division (Computer Networks Course)
+
+This project is tailored for a comprehensive Computer Networks laboratory/term course, explicitly dividing responsibilities across 5 student engineers. Each module implements critical networking, distributed systems, and real-time streaming concepts:
+
+| Student | Architectural Focus | Key Networking Concepts | Key Code Modules |
+|---|---|---|---|
+| **Person 1** | **Transport Layer & Wire Protocol Engineering** | Dual-Transport (WebSocket RFC 6455 vs Raw BSD TCP Sockets), Big-Endian 4-byte framing (`!I`), TCP stream segmentation / MTU fragmentation, Canonical Envelope codec, Session lifecycle & heartbeats. | `backend/app/transport/framing.py`<br>`backend/app/transport/websocket_gateway.py`<br>`backend/app/transport/raw_tcp_server.py`<br>`tools/lab_tcp_client.py` |
+| **Person 2** | **Server-Authoritative State Engine & Concurrency** | Actor model pattern (`asyncio.Queue`), Monotonic sequence ordering ($seq_{k+1} = seq_k + 1$), Total order broadcast, Gap detection & targeted replay (`RESYNC_REQ`), Optimistic UI reconciliation. | `backend/app/engine/room_actor.py`<br>`backend/app/engine/room_manager.py`<br>`backend/app/modules/canvas/module.py`<br>`frontend/src/features/canvas/state/CanvasStore.ts` |
+| **Person 3** | **WebRTC P2P Voice Mesh & Real-Time Signaling** | Decentralized full mesh topology ($O(N^2)$), SDP Offer/Answer signaling over WebSocket control plane, Deterministic glare avoidance, Asynchronous ICE candidate buffering, Web Audio VAD, Insecure context boundary mitigation. | `backend/app/modules/voice/module.py`<br>`frontend/src/features/voice/rtc/WebRTCVoiceMesh.ts`<br>`frontend/src/features/voice/components/` |
+| **Person 4** | **Ephemeral Traffic Optimization & Network Governance** | Spatial coordinate rate throttling (30Hz adaptive window), Linear interpolation (Lerp), Zero-disk memory queues, Granular audience multicast (socket-boundary privacy: `EVERYONE`, `HOST_ONLY`, `DIRECT`), Room locking, Remote eviction. | `backend/app/modules/chat/module.py`<br>`backend/app/modules/host_control/module.py`<br>`frontend/src/features/presence/RemoteCursorOverlay.tsx`<br>`frontend/src/features/chat/components/ChatPanel.tsx` |
+| **Person 5** | **Storage Persistence, Fault Injection & Full-Stack Client** | SQLite Write-Ahead Logging (WAL mode), Monotonic transaction journaling, 3-slot server notebook version snapshots & 1-click restore (`SNAPSHOT_RESTORE`), Network impairment testing (packet loss & jitter), 60 FPS double-buffered GoodNotes canvas engine. | `backend/app/storage/database.py`<br>`backend/app/storage/repositories/canvas_repo.py`<br>`tools/network_impairment_tester.py`<br>`frontend/src/features/canvas/components/CanvasView.tsx` |
+
+> [!NOTE]
+> **Academic Artifacts Included:**
+> - [presentation.tex](file:///c:/Users/raman/Downloads/COLLAB/presentation.tex): A complete 18-slide LaTeX Beamer presentation dividing the work into 5 people with `% PERSON X` comments, focused on networking theory and architecture.
+> - [video_script.txt](file:///c:/Users/raman/Downloads/COLLAB/video_script.txt): A comprehensive 16-18 minute presentation and live demonstration video script detailing exact speaker lines, slide cues, Wireshark packet captures, terminal commands, and live whiteboard tests.
+
+---
+
 ## Directory Structure
 
 ```
@@ -182,6 +201,7 @@ collabboard-x/
 | `E` | Switch to Eraser tool |
 | `L` | Switch to Lasso tool |
 | `T` | Switch to Text tool |
+| `Home` | Return to Home (Reset Pan to 0, 0 & Zoom to 100%) |
 
 ---
 
@@ -323,41 +343,64 @@ The desktop GUI window will pop up immediately:
 4. **Create or Join Board:** Click "Create New Whiteboard" or enter a Room Code.
 5. **Share & Graphical QR Code:** Click the **Share & QR** button in the top bar to pop up a visual QR code for mobile/tablet users to scan!
 
-### 3. Decluttered Workstation: Dedicated Workspace Tabs & Host Access Governance
-The user interface is organized into a clean 52px top navigation header with dedicated, specialized tabs and a docked side panel:
+### 3. Redesigned Minimal Navigation UI: Logo Popover & Dedicated Workspace Tabs
+The user interface features a clean, minimal 52px top navigation header divided into three focused sections:
 
-1. **`🎨 Whiteboard & Notebook` Tab:**
-   - Pure, uncompromised drawing and digital note-taking experience with **zero floating clutter**.
-   - Floating GoodNotes toolbar centered at top (`PenTool`, `Highlighter`, `Eraser`, `Lasso`, `Shapes`, `Text`, `Stickers`, `Laser`, `✨ Shapes Toggle`, `📄 Paper Background`).
-   - Note-synchronized `AudioRecorderBar` in top right.
-   - Page navigation and thumbnails drawer at bottom.
-   - Smooth exponential cursor-centered zoom widget at bottom left (`[ - ]`, `[ 100% ]`, `[ + ]`, `[ ⛶ Fit ]`).
-   - Canvas state is preserved continuously in memory when switching tabs (no redraws or lost context).
-   - **Board Access Enforcement:** When the Host disables board access, all non-host participants have their drawing toolbar hidden and see a prominent **"🔒 BOARD ACCESS DISABLED BY HOST"** banner. Canvas drawing is locked to read-only panning.
-   - **Docked Live Chat Panel:** Openable via the header `[ 💬 Chat ]` button directly over the whiteboard so participants can converse without interrupting their sketching.
+1. **Left: Interactive Brand Logo Popover:**
+   - Clicking the **CollabBoard X** brand logo on the far left opens a rich meeting & connection details popover:
+     - **Live Connection Status:** Real-time indicator dot (🟢 Connected / 🟡 Reconnecting / 🔴 Disconnected) and transport type (`WebSocket` or `Raw TCP`).
+     - **Room Code & 1-Click Copy Link:** Displays the current Room ID with an instant copy button (`📋 Copy Link`) providing visual copied feedback.
+     - **Share & QR Code Modal Trigger:** Instant access to mobile scanning QR code modal.
+     - **Server LAN Address:** Shows server endpoint (e.g. `192.168.1.37:8000`).
+     - **User Role Badge:** Clear indication of current role (`👑 HOST`, `✏️ EDITOR`, or `👁️ VIEWER`).
+     - **Host Master Board Access Switch:** Host can toggle room edit lock directly from the logo popover (`[ 🔓 Board: Open ]` / `[ 🔒 Board: Locked ]`).
+     - **Pending Cursor Requests:** Approvals for participant cursor sharing displayed directly inside the popover.
+     - **Leave Meeting:** Clean leave button to safely disconnect.
 
-2. **`👥 Meeting & Controls` Tab:**
-   - **Master Board Access Governance Card:**
-     - `[ 🔓 Board Access: Open ]` <--> `[ 🔒 Board Access: Disabled (Frozen) ]`
-     - One-click master toggle for the Room Host to immediately disable or enable board editing for all participants across the room.
-     - Server authoritatively rejects any non-host mutation while access is disabled (`BOARD_ACCESS_DISABLED`).
-   - **Participants & Permissions Matrix:**
-     - Clear distinction between `👑 Host (Admin)`, `✏️ Editor (Active Draw)`, and `👁️ Viewer (Access Disabled)`.
-     - Host can click **"Disable Access" / "Grant Access"** next to any participant row to change their individual permissions in real time.
-   - **Host Moderation & Muting:** Host can mute individual noisy participants, click **"Mute All"** to mute all microphones across the room, or kick disruptive participants.
-   - **Air-Gapped WebRTC Voice Mesh:** LAN group audio controls (Join Voice, Mute, Deafen, Leave) with live Voice Activity Detection (VAD).
-   - **Instant Share & QR Code Card:** Real-time graphical QR code rendered on canvas, instant LAN share link copy button, and room code copy button.
-   - **Notebook Version Control & Snapshots Card:**
-     - Quota tracker with visual 3-slot progress indicator (X / 3 Slots Used).
-     - One-click version save with custom naming and automatic conflict/overwrite detection.
-     - Saved versions list displaying item counts, pages count, and timestamps.
-     - Instant version restore directly to live whiteboard with room-wide snapshot synchronization.
-     - One-click version deletion and offline JSON export/import.
+2. **Center: Clean Two-Tab Workspace Switcher:**
+   - **`🎨 Whiteboard` Tab:**
+     - Pure, distraction-free canvas and digital note-taking experience with **zero floating clutter**.
+     - Floating GoodNotes toolbar centered at top (`PenTool` [Ballpoint, Fountain, Brush], `Highlighter`, `Eraser` [Whole / Partial segment-splitting], `Lasso`, `Shapes`, `Text`, `Stickers`, `Laser`, `✨ Shapes Toggle`, `📄 Paper Background`).
+     - Note-synchronized `AudioRecorderBar` in top right.
+     - Page navigation and thumbnails drawer at bottom.
+     - Smooth exponential zoom widget at bottom left (`[ - ]`, `[ 100% ]`, `[ + ]`, `[ ⛶ Fit ]`, and `[ 🏠 Home ]`).
+     - Canvas state is preserved continuously in memory when switching tabs (no redraws or lost context).
+     - **Board Access Enforcement:** When the Host disables board access, all non-host participants have their drawing toolbar hidden and see a prominent **"🔒 BOARD ACCESS DISABLED BY HOST"** banner. Canvas drawing is locked to read-only panning.
+   - **`👥 Controls` Tab (with Participant Count Badge):**
+     - Live participant counter badge (e.g. `Controls (3)`).
+     - **Participants & Permissions Matrix:** Grant or revoke individual editing access in real time.
+     - **Host Moderation & Muting:** Mute individual participants, click **"Mute All"**, or kick disruptive participants.
+     - **Air-Gapped WebRTC Voice Mesh Controls:** Join Voice, Mute, Deafen, and live Voice Activity Detection (VAD).
+     - **Notebook Version Control & Snapshots:** 3-slot notebook quota, named snapshots, 1-click restore (`[ 🔄 Restore ]`), and deletion.
 
-3. **`💬 Docked Whiteboard Chat` (Side Panel Drawer):**
-   - Click the header `[ 💬 Chat ]` toggle button at any time to slide out the docked chat panel.
-   - Filter chat audience with a single click: `👥 Everyone (Public)`, `👑 Room Host (Private)`, or `🔒 Particular Participant (Direct 1-on-1)`.
-   - Real-time unread notification badge (e.g. `💬 Chat [3]`) in the header alerts users when new messages arrive while the panel is collapsed.
+3. **Right: Parallel Chat Drawer & Quick Actions:**
+   - **`💬 Chat` Button (with Unread Counter):** Opens the real-time chat panel side-by-side alongside the whiteboard without obscuring the canvas or navigating away.
+   - **Audience-Scoped Chatting:** Select message scope: `👥 Everyone (Public)`, `👑 Room Host (Private)`, or `🔒 Particular Participant (Direct 1-on-1)`. Socket-boundary filtering ensures non-permitted clients never receive private frames.
+   - **Quick Voice Mic Toggle:** Mute/unmute microphone directly from the header.
+   - **User Profile Pill & Leave Button.**
+
+---
+
+### 3.1 WebRTC Voice over LAN Engine & Security Invariants
+
+CollabBoard X implements a high-performance, decentralized WebRTC voice mesh designed specifically for local area networks:
+
+- **Full Peer-to-Peer Mesh ($O(N^2)$):**
+  - Audio packets (Opus codec over RTP/UDP) stream directly peer-to-peer across LAN nodes without routing through the server CPU.
+  - Operates strictly offline without external STUN/TURN dependencies (`iceServers: []` with fallback).
+- **Asynchronous ICE Candidate Queuing:**
+  - Solves the classic WebRTC race condition where network ICE candidates arrive before `setRemoteDescription` completes. Early candidates are buffered in an internal `pendingCandidates` map and flushed immediately once the remote description is active, preventing `InvalidStateError` drops.
+- **Deterministic Glare Avoidance:**
+  - Prevents dual-offer collisions when peers join simultaneously by enforcing strict ID precedence (`myPeerId < remotePeerId` initiates `createOffer`).
+- **Active Voice Session Tracking:**
+  - Server maintains an active voice roster (`room_voice_peers`) and responds to `VOICE_ROSTER_REQ` with `VOICE_ROSTER_RES`. Peers only initiate WebRTC connections to users who have actually joined voice, eliminating call attempts to dormant participants.
+- **Handling Chromium Insecure Context Boundary on LAN (`http://<LAN_IP>:8000`):**
+  - Modern Chromium browsers (Chrome, Edge, Brave) disable `navigator.mediaDevices.getUserMedia` on non-localhost HTTP origins (`window.isSecureContext === false`).
+  - CollabBoard X detects this automatically and provides two seamless solutions:
+    1. **Browser Flag (One-Time Setup):** Navigate to `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<LAN_IP>:8000`, and click Relaunch.
+    2. **Native Desktop GUI Client (`CollabBoardX-Client.exe`):** Connect using the standalone desktop client, which runs locally on `127.0.0.1` and inherently satisfies the browser secure context requirement.
+
+---
 
 ### 4. Pixel-Exact Coordinates & Host-Moderated Cursor Governance
 

@@ -236,16 +236,16 @@ class HostControlModule(FeatureModule):
         return owner_key, username, ip
 
     async def handle_save_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Saves current room state as a named notebook version with 3-notebook limit per user/ip."""
+        """Saves current room state as a named notebook version with 3-notebook limit per user/ip. Host only."""
         room_id = envelope.room_id
-        if getattr(session, "role", "EDITOR") == "VIEWER":
+        if getattr(session, "role", "EDITOR") != "HOST":
             await session.send_envelope(
                 MessageEnvelope(
                     room_id=room_id,
                     sender_id="server",
                     type="NOTEBOOK_VERSION_SAVE_RES",
                     client_seq=envelope.client_seq,
-                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Viewers cannot save notebook versions."},
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Only the room host can save notebook versions."},
                 )
             )
             return
@@ -341,16 +341,16 @@ class HostControlModule(FeatureModule):
         )
 
     async def handle_restore_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Restores a saved notebook version to the active whiteboard room."""
+        """Restores a saved notebook version to the active whiteboard room. Host only."""
         room_id = envelope.room_id
-        if getattr(session, "role", "EDITOR") == "VIEWER":
+        if getattr(session, "role", "EDITOR") != "HOST":
             await session.send_envelope(
                 MessageEnvelope(
                     room_id=room_id,
                     sender_id="server",
                     type="NOTEBOOK_VERSION_RESTORE_RES",
                     client_seq=envelope.client_seq,
-                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Viewers cannot restore notebook versions."},
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Only the room host can restore notebook versions."},
                 )
             )
             return
@@ -421,8 +421,20 @@ class HostControlModule(FeatureModule):
         )
 
     async def handle_delete_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Deletes a saved notebook version."""
+        """Deletes a saved notebook version. Host only."""
         room_id = envelope.room_id
+        if getattr(session, "role", "EDITOR") != "HOST":
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="NOTEBOOK_VERSION_DELETE_RES",
+                    client_seq=envelope.client_seq,
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Only the room host can delete notebook versions."},
+                )
+            )
+            return
+
         version_id = envelope.payload.get("version_id")
         if not version_id:
             return

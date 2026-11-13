@@ -18,7 +18,6 @@ import { ShareRoomModal } from '../features/canvas/components/ShareRoomModal';
 import {
   Wifi,
   WifiOff,
-  ArrowLeft,
   QrCode,
   Eye,
   Crown,
@@ -30,10 +29,12 @@ import {
   MicOff,
   Lock,
   Unlock,
-  MousePointer2,
-  RotateCcw,
-  RotateCw,
+  ChevronDown,
+  Copy,
+  Check,
+  LogOut,
 } from 'lucide-react';
+import { copyToClipboard } from '../core/utils/clipboard';
 
 // Initialize registries once
 registerBuiltinRenderers();
@@ -74,6 +75,40 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
   const [isThumbnailsOpen, setIsThumbnailsOpen] = useState(false);
   const [isStickersOpen, setIsStickersOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  // Logo Connection & Meeting Details Popover
+  const [isLogoDetailsOpen, setIsLogoDetailsOpen] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
+  const logoPopoverRef = useRef<HTMLDivElement | null>(null);
+  const logoBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  // Auto-dismiss Logo popover when clicking outside
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (
+        logoPopoverRef.current &&
+        !logoPopoverRef.current.contains(e.target as Node) &&
+        logoBtnRef.current &&
+        !logoBtnRef.current.contains(e.target as Node)
+      ) {
+        setIsLogoDetailsOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', handleOutsideClick);
+    return () => window.removeEventListener('pointerdown', handleOutsideClick);
+  }, []);
+
+  const meetingUrl = useMemo(() => {
+    return `${window.location.origin}/?room=${encodeURIComponent(roomId)}`;
+  }, [roomId]);
+
+  const handleCopyLink = async () => {
+    const ok = await copyToClipboard(meetingUrl);
+    if (ok) {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
+  };
 
   // Master Board Access & Role Governance
   const [userRole, setUserRole] = useState<'HOST' | 'EDITOR' | 'VIEWER'>(isCreator ? 'HOST' : 'EDITOR');
@@ -389,7 +424,10 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
 
       {/* =========================================================================
           TOP UNIFIED NAVIGATION HEADER BAR (Height: 52px)
-          Houses Brand, Room info, Master Access Switch, Tab Switcher, Voice, Role
+          Uncluttered layout:
+          - LEFT: Brand Logo (clicking reveals connection & meeting details popover)
+          - CENTER: Whiteboard Tab & Controls Tab
+          - RIGHT: Chat button (opens parallely), Voice mic, User role, Leave
          ========================================================================= */}
       <header
         className="cb-header"
@@ -403,352 +441,329 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 20px',
+          padding: '0 16px',
           boxSizing: 'border-box',
           zIndex: 60,
           boxShadow: '0 2px 12px rgba(0, 0, 0, 0.4)',
         }}
       >
-        {/* Left Section: Back, Brand, Room ID, Live Status */}
-        <div className="cb-header-left" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        {/* 1. LEFT: Interactive Brand Logo -> Reveals Connection & Meeting Details */}
+        <div style={{ position: 'relative' }}>
           <button
-            onClick={onLeave}
-            title="Back to Dashboard"
+            ref={logoBtnRef}
+            onClick={() => setIsLogoDetailsOpen((prev) => !prev)}
+            title="Click to view Connection & Meeting details"
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(255, 255, 255, 0.06)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: 8,
-              color: '#94a3b8',
+              gap: 8,
+              background: isLogoDetailsOpen ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+              border: `1px solid ${isLogoDetailsOpen ? 'rgba(59, 130, 246, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+              borderRadius: 10,
+              padding: '6px 12px',
               cursor: 'pointer',
-              padding: '6px 10px',
               transition: 'all 0.15s ease',
             }}
           >
-            <ArrowLeft size={16} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontWeight: 800, fontSize: 15, color: '#38bdf8', letterSpacing: '-0.3px' }}>
+                CollabBoard
+              </span>
+              <span
+                style={{
+                  background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+                  color: '#ffffff',
+                  fontSize: 10,
+                  fontWeight: 800,
+                  padding: '2px 6px',
+                  borderRadius: 4,
+                }}
+              >
+                X
+              </span>
+            </div>
+
+            {/* Live Connection indicator dot */}
+            <span
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: '50%',
+                background:
+                  connStatus === 'CONNECTED'
+                    ? '#22c55e'
+                    : connStatus === 'CONNECTING' || connStatus === 'RECONNECTING'
+                    ? '#f59e0b'
+                    : '#ef4444',
+                boxShadow: connStatus === 'CONNECTED' ? '0 0 6px #22c55e' : 'none',
+              }}
+            />
+            <ChevronDown size={13} color="#94a3b8" />
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span className="cb-desktop-only" style={{ fontWeight: 800, fontSize: 15, color: '#38bdf8', letterSpacing: '-0.3px' }}>
-              CollabBoard
-            </span>
-            <span
+          {/* Connection & Meeting Details Popover */}
+          {isLogoDetailsOpen && (
+            <div
+              ref={logoPopoverRef}
               style={{
-                background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                color: '#ffffff',
-                fontSize: 10,
-                fontWeight: 800,
-                padding: '2px 6px',
-                borderRadius: 4,
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                left: 0,
+                width: 320,
+                background: 'rgba(15, 23, 42, 0.98)',
+                backdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: 12,
+                boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
+                padding: '16px',
+                zIndex: 100,
+                color: '#e2e8f0',
               }}
             >
-              X
-            </span>
-          </div>
+              {/* Popover Header: Room & Copy Link */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
+                    Current Room
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#ffffff', marginTop: 2 }}>
+                    {roomId}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={handleCopyLink}
+                    title="Copy Meeting Link"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: isCopied ? 'rgba(34, 197, 94, 0.2)' : 'rgba(255, 255, 255, 0.1)',
+                      color: isCopied ? '#4ade80' : '#ffffff',
+                      border: `1px solid ${isCopied ? 'rgba(34, 197, 94, 0.4)' : 'rgba(255, 255, 255, 0.15)'}`,
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isCopied ? <Check size={12} /> : <Copy size={12} />}
+                    <span>{isCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsLogoDetailsOpen(false);
+                      setIsShareModalOpen(true);
+                    }}
+                    title="Open QR Code & Sharing Options"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#60a5fa',
+                      border: '1px solid rgba(59, 130, 246, 0.4)',
+                      borderRadius: 6,
+                      padding: '4px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <QrCode size={12} />
+                    <span>QR</span>
+                  </button>
+                </div>
+              </div>
 
-          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+              <div style={{ height: 1, background: 'rgba(255, 255, 255, 0.1)', margin: '10px 0' }} />
 
-          <div className="cb-desktop-only" style={{ fontSize: 13, color: '#cbd5e1' }}>
-            Room: <strong style={{ color: '#ffffff' }}>{roomId}</strong>
-          </div>
+              {/* Host Pending Cursor Approvals */}
+              {isHost && pendingCursorRequests.length > 0 && (
+                <div style={{ marginBottom: 12, background: 'rgba(59, 130, 246, 0.15)', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#93c5fd', marginBottom: 6 }}>
+                    Cursor Share Requests ({pendingCursorRequests.length})
+                  </div>
+                  {pendingCursorRequests.map((req) => (
+                    <div key={req.requester_session_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                      <span style={{ color: '#ffffff', fontWeight: 600 }}>{req.display_name}</span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button onClick={() => handleCursorDecision(req.requester_session_id, true)} style={{ background: '#22c55e', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Allow</button>
+                        <button onClick={() => handleCursorDecision(req.requester_session_id, false)} style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 8px', fontSize: 10, fontWeight: 700, cursor: 'pointer' }}>Deny</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
 
-          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+              {/* Connection Status Section */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 6 }}>
+                  Network &amp; Connection
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: '#94a3b8' }}>Status:</span>
+                  <div>{getStatusBadge()}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: '#94a3b8' }}>Host Address:</span>
+                  <span style={{ color: '#cbd5e1', fontFamily: 'monospace', fontSize: 11 }}>{serverAddress}</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: '#94a3b8' }}>Active Transport:</span>
+                  <span style={{ color: '#cbd5e1' }}>WebSocket (TCP 9001 Lab)</span>
+                </div>
+              </div>
 
-          <div className="cb-status-badge">{getStatusBadge()}</div>
-        </div>
+              <div style={{ height: 1, background: 'rgba(255, 255, 255, 0.1)', margin: '10px 0' }} />
 
-        {/* Center Section: Main Workstation Tab Switcher & Master Access Button */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* Host Master Board Access Switch */}
-          {isHost ? (
-            <button
-              onClick={handleToggleBoardAccess}
-              title={
-                isBoardLocked
-                  ? 'Board Access is Disabled for Participants. Click to Enable.'
-                  : 'Board Access is Open to Editors. Click to Freeze/Disable.'
-              }
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background: isBoardLocked ? 'rgba(239, 68, 68, 0.25)' : 'rgba(34, 197, 94, 0.2)',
-                color: isBoardLocked ? '#f87171' : '#4ade80',
-                border: `1px solid ${isBoardLocked ? 'rgba(239, 68, 68, 0.5)' : 'rgba(34, 197, 94, 0.4)'}`,
-                borderRadius: 8,
-                padding: '5px 12px',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              {isBoardLocked ? <Lock size={13} /> : <Unlock size={13} />}
-              <span className="cb-desktop-only">{isBoardLocked ? 'Board Access: Disabled' : 'Board Access: Open'}</span>
-              <span className="cb-badge-text" style={{ display: 'none' }}>{isBoardLocked ? 'Locked' : 'Open'}</span>
-            </button>
-          ) : isBoardLocked ? (
-            <span
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 5,
-                background: 'rgba(239, 68, 68, 0.2)',
-                color: '#f87171',
-                border: '1px solid rgba(239, 68, 68, 0.4)',
-                borderRadius: 8,
-                padding: '5px 10px',
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              <Lock size={12} />
-              <span>Read-Only</span>
-            </span>
-          ) : null}
+              {/* Meeting Info Section */}
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700, marginBottom: 6 }}>
+                  Meeting Governance
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ color: '#94a3b8' }}>Your Role:</span>
+                  <strong style={{ color: userRole === 'HOST' ? '#fbbf24' : '#60a5fa' }}>{userRole}</strong>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12 }}>
+                  <span style={{ color: '#94a3b8' }}>Board Access:</span>
+                  <span style={{ color: isBoardLocked ? '#f87171' : '#4ade80', fontWeight: 600 }}>
+                    {isBoardLocked ? 'Disabled (Read-Only)' : 'Open to Editors'}
+                  </span>
+                </div>
+                {isHost && (
+                  <button
+                    onClick={handleToggleBoardAccess}
+                    style={{
+                      width: '100%',
+                      marginTop: 8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 6,
+                      background: isBoardLocked ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                      color: isBoardLocked ? '#4ade80' : '#f87171',
+                      border: `1px solid ${isBoardLocked ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)'}`,
+                      borderRadius: 6,
+                      padding: '5px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {isBoardLocked ? <Unlock size={12} /> : <Lock size={12} />}
+                    <span>{isBoardLocked ? 'Unlock Board for Editors' : 'Lock Board (Read-Only)'}</span>
+                  </button>
+                )}
+              </div>
 
-          {/* Quick Undo & Redo Header Controls (Always visible in Whiteboard mode) */}
-          {activeTab === 'whiteboard' && !isAccessDisabled && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <div style={{ height: 1, background: 'rgba(255, 255, 255, 0.1)', margin: '10px 0' }} />
+
+              {/* Leave Meeting Button */}
               <button
-                onClick={() => store.undo()}
-                disabled={!store.canUndo()}
-                title="Undo (Ctrl+Z)"
+                onClick={() => {
+                  setIsLogoDetailsOpen(false);
+                  onLeave();
+                }}
                 style={{
+                  width: '100%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: store.canUndo() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: 7,
-                  color: store.canUndo() ? '#ffffff' : '#64748b',
-                  opacity: store.canUndo() ? 1 : 0.4,
-                  cursor: store.canUndo() ? 'pointer' : 'not-allowed',
-                  padding: '5px 8px',
-                  transition: 'all 0.15s ease',
+                  gap: 6,
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  color: '#f87171',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: 6,
+                  padding: '6px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
                 }}
               >
-                <RotateCcw size={14} />
-              </button>
-              <button
-                onClick={() => store.redo()}
-                disabled={!store.canRedo()}
-                title="Redo (Ctrl+Y)"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: store.canRedo() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.04)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  borderRadius: 7,
-                  color: store.canRedo() ? '#ffffff' : '#64748b',
-                  opacity: store.canRedo() ? 1 : 0.4,
-                  cursor: store.canRedo() ? 'pointer' : 'not-allowed',
-                  padding: '5px 8px',
-                  transition: 'all 0.15s ease',
-                }}
-              >
-                <RotateCw size={14} />
+                <LogOut size={13} />
+                <span>Leave Meeting</span>
               </button>
             </div>
           )}
+        </div>
 
-          <nav
+        {/* 2. CENTER: Clean Tabs (Whiteboard Tab, Controls Tab) */}
+        <nav
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            background: 'rgba(30, 41, 59, 0.85)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            padding: 3,
+            borderRadius: 10,
+            gap: 4,
+          }}
+        >
+          <button
+            onClick={() => setActiveTab('whiteboard')}
+            className="cb-tab-btn"
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: 'rgba(30, 41, 59, 0.85)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              padding: 3,
-              borderRadius: 10,
-              gap: 4,
+              gap: 7,
+              padding: '6px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: activeTab === 'whiteboard' ? '#3b82f6' : 'transparent',
+              color: activeTab === 'whiteboard' ? '#ffffff' : '#94a3b8',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
-            <button
-              onClick={() => setActiveTab('whiteboard')}
-              className="cb-tab-btn"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: activeTab === 'whiteboard' ? '#3b82f6' : 'transparent',
-                color: activeTab === 'whiteboard' ? '#ffffff' : '#94a3b8',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <PenTool size={14} />
-              <span>Whiteboard</span>
-              <span className="cb-desktop-only">&nbsp;&amp; Notebook</span>
-            </button>
+            <PenTool size={14} />
+            <span>Whiteboard</span>
+          </button>
 
-            <button
-              onClick={() => setActiveTab('meeting')}
-              className="cb-tab-btn"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 7,
-                padding: '6px 14px',
-                borderRadius: 8,
-                border: 'none',
-                background: activeTab === 'meeting' ? '#3b82f6' : 'transparent',
-                color: activeTab === 'meeting' ? '#ffffff' : '#94a3b8',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Users size={14} />
-              <span>Meeting</span>
-              <span className="cb-desktop-only">&nbsp;&amp; Controls</span>
-              {participantCount > 0 && (
-                <span
-                  style={{
-                    background: activeTab === 'meeting' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)',
-                    color: '#ffffff',
-                    padding: '1px 6px',
-                    borderRadius: 10,
-                    fontSize: 11,
-                    fontWeight: 700,
-                  }}
-                >
-                  {participantCount}
-                </span>
-              )}
-            </button>
-          </nav>
-        </div>
-
-        {/* Right Section: Quick Mic Mute, Share Pointer, Share Modal Trigger, User Profile Badge */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* Host Pending Cursor Share Approvals */}
-          {isHost && pendingCursorRequests.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {pendingCursorRequests.map((req) => (
-                <div
-                  key={req.requester_session_id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    background: 'rgba(59, 130, 246, 0.25)',
-                    border: '1px solid rgba(59, 130, 246, 0.5)',
-                    borderRadius: 8,
-                    padding: '3px 8px',
-                    fontSize: 11,
-                    color: '#93c5fd',
-                  }}
-                >
-                  <MousePointer2 size={12} />
-                  <span>
-                    <strong>{req.display_name}</strong> wants to show cursor
-                  </span>
-                  <button
-                    onClick={() => handleCursorDecision(req.requester_session_id, true)}
-                    style={{
-                      background: '#22c55e',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 4,
-                      padding: '2px 6px',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Allow
-                  </button>
-                  <button
-                    onClick={() => handleCursorDecision(req.requester_session_id, false)}
-                    style={{
-                      background: 'rgba(239, 68, 68, 0.8)',
-                      color: '#ffffff',
-                      border: 'none',
-                      borderRadius: 4,
-                      padding: '2px 6px',
-                      fontSize: 10,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Deny
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Participant Share Cursor Request Button */}
-          {!isHost && userRole !== 'VIEWER' && (
-            <button
-              onClick={() => {
-                if (cursorShareStatus === 'OFF') {
-                  conn.send('CURSOR_PERMISSION_REQ', {});
-                  setCursorShareStatus('PENDING');
-                } else if (cursorShareStatus === 'SHARING') {
-                  setCursorShareStatus('OFF');
-                }
-              }}
-              disabled={cursorShareStatus === 'PENDING'}
-              title={
-                cursorShareStatus === 'SHARING'
-                  ? 'Your cursor is currently visible to participants (Click to stop)'
-                  : cursorShareStatus === 'PENDING'
-                  ? 'Waiting for Host approval...'
-                  : 'Ask Host permission to display your cursor to the room'
-              }
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                background:
-                  cursorShareStatus === 'SHARING'
-                    ? 'rgba(34, 197, 94, 0.2)'
-                    : cursorShareStatus === 'PENDING'
-                    ? 'rgba(234, 179, 8, 0.2)'
-                    : 'rgba(255, 255, 255, 0.06)',
-                color:
-                  cursorShareStatus === 'SHARING'
-                    ? '#4ade80'
-                    : cursorShareStatus === 'PENDING'
-                    ? '#facc15'
-                    : '#94a3b8',
-                border: `1px solid ${
-                  cursorShareStatus === 'SHARING'
-                    ? 'rgba(34, 197, 94, 0.4)'
-                    : cursorShareStatus === 'PENDING'
-                    ? 'rgba(234, 179, 8, 0.4)'
-                    : 'rgba(255, 255, 255, 0.12)'
-                }`,
-                borderRadius: 8,
-                padding: '5px 11px',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: cursorShareStatus === 'PENDING' ? 'not-allowed' : 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <MousePointer2 size={13} />
-              <span className="cb-desktop-only">
-                {cursorShareStatus === 'SHARING'
-                  ? 'Pointer: Shared'
-                  : cursorShareStatus === 'PENDING'
-                  ? 'Request Pending...'
-                  : 'Share Pointer'}
+          <button
+            onClick={() => setActiveTab('meeting')}
+            className="cb-tab-btn"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '6px 16px',
+              borderRadius: 8,
+              border: 'none',
+              background: activeTab === 'meeting' ? '#3b82f6' : 'transparent',
+              color: activeTab === 'meeting' ? '#ffffff' : '#94a3b8',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Users size={14} />
+            <span>Controls</span>
+            {participantCount > 0 && (
+              <span
+                style={{
+                  background: activeTab === 'meeting' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)',
+                  color: '#ffffff',
+                  padding: '1px 6px',
+                  borderRadius: 10,
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                {participantCount}
               </span>
-            </button>
-          )}
+            )}
+          </button>
+        </nav>
 
-          {/* Quick Voice Mic Button */}
+        {/* 3. RIGHT: Chat (Opens Parallely) + Voice mic + User role + Leave */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Quick Voice Mic Indicator (if connected to voice) */}
           {voiceMesh.isConnected && (
             <button
               onClick={() => voiceMesh.toggleMute()}
@@ -756,54 +771,29 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                gap: 5,
                 background: voiceMesh.isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
                 color: voiceMesh.isMuted ? '#ef4444' : '#22c55e',
                 border: `1px solid ${voiceMesh.isMuted ? 'rgba(239, 68, 68, 0.35)' : 'rgba(34, 197, 94, 0.35)'}`,
                 borderRadius: 8,
-                padding: '5px 11px',
-                fontSize: 12,
+                padding: '5px 9px',
+                fontSize: 11,
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
-              {voiceMesh.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
-              <span className="cb-desktop-only">{voiceMesh.isMuted ? 'Muted' : 'Speaking'}</span>
+              {voiceMesh.isMuted ? <MicOff size={13} /> : <Mic size={13} />}
+              <span className="cb-desktop-only">{voiceMesh.isMuted ? 'Muted' : 'Live'}</span>
             </button>
           )}
 
-          {/* Quick Share Modal Button */}
-          <button
-            onClick={() => setIsShareModalOpen(true)}
-            title="Share Board Link & Real-time QR Code"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              background: 'rgba(59, 130, 246, 0.2)',
-              color: '#60a5fa',
-              border: '1px solid rgba(59, 130, 246, 0.3)',
-              borderRadius: 8,
-              padding: '5px 11px',
-              fontSize: 12,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            <QrCode size={14} />
-            <span className="cb-desktop-only">Share &amp; QR</span>
-          </button>
-
-          {/* Quick Chat Side Panel Toggle Button */}
+          {/* Chat Button (Opens parallely alongside the Whiteboard) */}
           <button
             onClick={() => {
               setIsChatOpen((o) => !o);
               setUnreadChatCount(0);
-              if (activeTab !== 'whiteboard') {
-                setActiveTab('whiteboard');
-              }
             }}
-            title={isChatOpen ? 'Close Chat Side Panel' : 'Open Live Whiteboard Chat Panel'}
+            title={isChatOpen ? 'Close Chat Side Panel' : 'Open Live Chat Panel (Parallely)'}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -812,7 +802,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               color: isChatOpen ? '#93c5fd' : '#cbd5e1',
               border: `1px solid ${isChatOpen ? 'rgba(59, 130, 246, 0.55)' : 'rgba(255, 255, 255, 0.15)'}`,
               borderRadius: 8,
-              padding: '5px 11px',
+              padding: '6px 12px',
               fontSize: 12,
               fontWeight: 600,
               cursor: 'pointer',
@@ -821,7 +811,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             }}
           >
             <MessageSquare size={14} />
-            <span className="cb-desktop-only">Chat</span>
+            <span>Chat</span>
             {unreadChatCount > 0 && (
               <span
                 style={{
@@ -842,8 +832,10 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
 
           {/* User Display Badge with Role Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="cb-desktop-only" style={{ fontSize: 13, color: '#f8fafc', fontWeight: 500 }}>{displayName}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span className="cb-desktop-only" style={{ fontSize: 13, color: '#f8fafc', fontWeight: 500 }}>
+              {displayName}
+            </span>
             <span
               style={{
                 background:
@@ -869,12 +861,32 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                 gap: 4,
               }}
             >
-              {userRole === 'HOST' && <Crown size={12} />}
-              {userRole === 'VIEWER' && <Eye size={12} />}
-              {userRole === 'EDITOR' && <Edit3 size={12} />}
-              <span className="cb-desktop-only">{userRole}</span>
+              {userRole === 'HOST' && <Crown size={11} />}
+              {userRole === 'VIEWER' && <Eye size={11} />}
+              {userRole === 'EDITOR' && <Edit3 size={11} />}
+              <span>{userRole}</span>
             </span>
           </div>
+
+          {/* Leave Button */}
+          <button
+            onClick={onLeave}
+            title="Leave Meeting"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(239, 68, 68, 0.15)',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              borderRadius: 8,
+              color: '#f87171',
+              cursor: 'pointer',
+              padding: '6px 9px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </header>
 

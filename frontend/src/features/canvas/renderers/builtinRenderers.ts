@@ -9,37 +9,49 @@ function drawSelectionBox(
   isLocked: boolean = false
 ) {
   const pad = 6;
+  const x1 = minX - pad;
+  const y1 = minY - pad;
+  const x2 = maxX + pad;
+  const y2 = maxY + pad;
+  const midX = (x1 + x2) / 2;
+  const midY = (y1 + y2) / 2;
+
   ctx.save();
   ctx.strokeStyle = isLocked ? '#ef4444' : '#3b82f6';
   ctx.lineWidth = 1.5;
   ctx.setLineDash([6, 4]);
-  ctx.strokeRect(minX - pad, minY - pad, maxX - minX + pad * 2, maxY - minY + pad * 2);
+  ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
   ctx.setLineDash([]);
 
-  // Corner transform handles
+  // Corner and edge transform resize handles (8 points)
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = isLocked ? '#ef4444' : '#3b82f6';
-  const handleSize = 7;
-  const corners = [
-    [minX - pad, minY - pad],
-    [maxX + pad, minY - pad],
-    [maxX + pad, maxY + pad],
-    [minX - pad, maxY + pad],
+  ctx.lineWidth = 1.5;
+  const handleSize = 8;
+  const handles = [
+    [x1, y1],     // nw
+    [midX, y1],   // n
+    [x2, y1],     // ne
+    [x2, midY],   // e
+    [x2, y2],     // se
+    [midX, y2],   // s
+    [x1, y2],     // sw
+    [x1, midY],   // w
   ];
-  for (const [cx, cy] of corners) {
+
+  for (const [cx, cy] of handles) {
     ctx.fillRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize);
     ctx.strokeRect(cx - handleSize / 2, cy - handleSize / 2, handleSize, handleSize);
   }
 
   // Rotation pin handle at top
-  const topMidX = (minX + maxX) / 2;
-  const topMidY = minY - pad - 16;
+  const topMidY = y1 - 16;
   ctx.beginPath();
-  ctx.moveTo(topMidX, minY - pad);
-  ctx.lineTo(topMidX, topMidY);
+  ctx.moveTo(midX, y1);
+  ctx.lineTo(midX, topMidY);
   ctx.stroke();
   ctx.beginPath();
-  ctx.arc(topMidX, topMidY, 4, 0, 2 * Math.PI);
+  ctx.arc(midX, topMidY, 4, 0, 2 * Math.PI);
   ctx.fill();
   ctx.stroke();
 
@@ -497,8 +509,20 @@ export const ImageRenderer: ElementRenderer = {
     }
     ctx.restore();
   },
-  hitTest: RectangleRenderer.hitTest,
-  getBounds: RectangleRenderer.getBounds,
+  hitTest(element, point) {
+    const b = this.getBounds(element);
+    return point.x >= b.minX && point.x <= b.maxX && point.y >= b.minY && point.y <= b.maxY;
+  },
+  getBounds(element) {
+    const w = element.width || 240;
+    const h = element.height || 180;
+    return {
+      minX: Math.min(element.x, element.x + w),
+      minY: Math.min(element.y, element.y + h),
+      maxX: Math.max(element.x, element.x + w),
+      maxY: Math.max(element.y, element.y + h),
+    };
+  },
 };
 
 // 11. Sticker / Decorative Element Renderer (Sticky notes, Emojis, Badges)
@@ -626,8 +650,20 @@ export const StickerRenderer: ElementRenderer = {
     }
     ctx.restore();
   },
-  hitTest: RectangleRenderer.hitTest,
-  getBounds: RectangleRenderer.getBounds,
+  hitTest(element, point) {
+    const b = this.getBounds(element);
+    return point.x >= b.minX && point.x <= b.maxX && point.y >= b.minY && point.y <= b.maxY;
+  },
+  getBounds(element) {
+    const w = element.width || 140;
+    const h = element.height || 140;
+    return {
+      minX: Math.min(element.x, element.x + w),
+      minY: Math.min(element.y, element.y + h),
+      maxX: Math.max(element.x, element.x + w),
+      maxY: Math.max(element.y, element.y + h),
+    };
+  },
 };
 
 // Register all GoodNotes renderers

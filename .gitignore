@@ -12,6 +12,31 @@ dist/
 # Node / Frontend
 node_modules/
 .npm/
+frontend/dist/
+
+
+dist/
+vital_docs/
 
 # Logs
 *.log
+
+# Presentation & Recording Artifacts
+presentation.tex
+presentation.pdf
+video_script.txt
+*.aux
+*.nav
+*.snm
+*.toc
+*.out
+*.vrb
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

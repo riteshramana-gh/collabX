@@ -29,6 +29,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Home,
   Check,
   ChevronDown,
   Edit2,
@@ -57,10 +58,22 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
   const [, setTick] = useState(0);
   const [openMenu, setOpenMenu] = useState<'pen' | 'eraser' | 'shape' | 'text' | 'background' | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return store.subscribe(() => setTick((t) => t + 1));
   }, [store]);
+
+  // Click outside listener to dismiss open popup menus
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    window.addEventListener('pointerdown', handleOutsideClick);
+    return () => window.removeEventListener('pointerdown', handleOutsideClick);
+  }, []);
 
   const activeTool = store.activeToolId;
   const selectedId = store.selectedElementId;
@@ -93,6 +106,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
   return (
     <div
+      ref={toolbarRef}
       className="cb-canvas-toolbar"
       style={{
         position: 'absolute',
@@ -110,8 +124,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
         zIndex: 50,
         maxWidth: 'calc(100vw - 24px)',
-        overflowX: 'auto',
-        scrollbarWidth: 'none',
+        overflow: 'visible',
       }}
     >
       <input
@@ -132,7 +145,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
       </button>
 
       {/* 2. PEN TOOL (with Ballpoint / Fountain / Brush popup) */}
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <button
           title={`Pen (${store.penStyle})`}
           onClick={() => {
@@ -145,7 +158,20 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
           style={getToolBtnStyle(activeTool === 'pencil')}
         >
           <Pencil size={18} />
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+          <ChevronDown
+            size={11}
+            style={{ marginLeft: -1, cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (activeTool !== 'pencil') {
+                store.endTransaction();
+                store.activeToolId = 'pencil';
+                store.setSelectedElementId(null);
+              }
+              setOpenMenu(openMenu === 'pen' ? null : 'pen');
+              setTick((v) => v + 1);
+            }}
+          />
         </button>
 
         {openMenu === 'pen' && (
@@ -179,7 +205,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
       </button>
 
       {/* 4. ERASER TOOL (with Whole / Partial / Highlighter-Only popup) */}
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <button
           title={`Eraser (${store.eraserMode})`}
           onClick={() => {
@@ -192,7 +218,20 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
           style={getToolBtnStyle(activeTool === 'eraser')}
         >
           <Eraser size={18} />
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+          <ChevronDown
+            size={11}
+            style={{ marginLeft: -1, cursor: 'pointer' }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (activeTool !== 'eraser') {
+                store.endTransaction();
+                store.activeToolId = 'eraser';
+                store.setSelectedElementId(null);
+              }
+              setOpenMenu(openMenu === 'eraser' ? null : 'eraser');
+              setTick((v) => v + 1);
+            }}
+          />
         </button>
 
         {openMenu === 'eraser' && (
@@ -245,7 +284,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
       </button>
 
       {/* 6. SHAPES MENU (Rect, Ellipse, Line, Arrow, Triangle) */}
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <button
           title="Geometric Shapes"
           onClick={() => setOpenMenu(openMenu === 'shape' ? null : 'shape')}
@@ -262,7 +301,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
           ) : (
             <Square size={18} />
           )}
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+          <ChevronDown size={11} style={{ marginLeft: -1 }} />
         </button>
 
         {openMenu === 'shape' && (
@@ -681,6 +720,16 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
             <ZoomIn size={16} />
           </button>
           <button
+            title="Return to Home (0, 0 at 100%)"
+            onClick={() => {
+              store.setPan(0, 0);
+              store.setZoom(1.0);
+            }}
+            style={actionBtnStyle}
+          >
+            <Home size={15} />
+          </button>
+          <button
             title="Reset View"
             onClick={() => {
               store.setPan(0, 0);
@@ -734,7 +783,7 @@ const separatorStyle: React.CSSProperties = {
 
 const popupMenuStyle: React.CSSProperties = {
   position: 'absolute',
-  top: '110%',
+  top: 'calc(100% + 6px)',
   left: 0,
   minWidth: 160,
   background: 'rgba(15, 23, 42, 0.96)',
@@ -743,7 +792,7 @@ const popupMenuStyle: React.CSSProperties = {
   borderRadius: 10,
   padding: '6px 0',
   boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-  zIndex: 60,
+  zIndex: 100,
 };
 
 const menuHeaderStyle: React.CSSProperties = {

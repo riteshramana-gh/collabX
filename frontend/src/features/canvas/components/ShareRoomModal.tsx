@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { X, Copy, Check, Share2, Globe, Shield } from 'lucide-react';
+import { copyToClipboard } from '../../../core/utils/clipboard';
 
 interface ShareRoomModalProps {
   isOpen: boolean;
@@ -45,14 +46,14 @@ export const ShareRoomModal: React.FC<ShareRoomModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareUrl);
+  const handleCopyLink = async () => {
+    await copyToClipboard(shareUrl);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(roomId);
+  const handleCopyCode = async () => {
+    await copyToClipboard(roomId);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };

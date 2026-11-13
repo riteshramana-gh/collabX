@@ -12,6 +12,7 @@ export class WebRTCVoiceMesh {
   private localStream: MediaStream | null = null;
   private peerConnections = new Map<string, RTCPeerConnection>();
   private audioElements = new Map<string, HTMLAudioElement>();
+  private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
 
   // State
   public isConnected = false;
@@ -47,38 +48,102 @@ export class WebRTCVoiceMesh {
       const pc = this.peerConnections.get(source_session_id);
       if (pc) {
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        // Flush any ICE candidates that arrived before the answer
+        await this.flushPendingCandidates(source_session_id, pc);
       }
     });
 
     // 3. Inbound ICE Candidate
     this.conn.on('VOICE_SIGNAL_ICE', async (envelope) => {
       const { source_session_id, candidate } = envelope.payload;
+      if (!candidate) return;
+
       const pc = this.peerConnections.get(source_session_id);
-      if (pc && candidate) {
+      if (pc && pc.remoteDescription && pc.remoteDescription.type) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (e) {
           console.warn('[WebRTC] Failed to add ICE candidate:', e);
         }
+      } else {
+        // Queue candidate until remote description is established
+        if (!this.pendingCandidates.has(source_session_id)) {
+          this.pendingCandidates.set(source_session_id, []);
+        }
+        this.pendingCandidates.get(source_session_id)!.push(candidate);
       }
     });
 
-    // 4. Inbound Voice State Broadcast (Peer joined or changed state)
+    // 4. Inbound Voice State Broadcast (Peer joined, left, or changed audio state)
     this.conn.on('VOICE_STATE_BROADCAST', async (envelope) => {
-      if (!this.isConnected || !this.localStream) return;
       const peerId = envelope.payload?.session_id;
       const myId = (this.conn as any).senderId;
       if (!peerId || peerId === myId) return;
 
-      // Avoid glare: Peer with smaller ID initiates offer
+      // Peer left voice
+      if (envelope.payload?.is_active === false) {
+        this.closePeer(peerId);
+        if (this.onStateChangeCallback) this.onStateChangeCallback();
+        return;
+      }
+
+      if (!this.isConnected || !this.localStream) return;
+
+      // Avoid glare: Peer with smaller ID initiates offer to newly joined peer
       if (!this.peerConnections.has(peerId) && myId < peerId) {
         await this.initiateCallToPeer(peerId);
       }
     });
+
+    // 5. Inbound Voice Roster Response (List of peers currently active in voice)
+    this.conn.on('VOICE_ROSTER_RES', async (envelope) => {
+      if (!this.isConnected || !this.localStream) return;
+      const peers = (envelope.payload?.peers || []) as Array<{ session_id: string; is_active?: boolean }>;
+      const myId = (this.conn as any).senderId;
+
+      for (const peer of peers) {
+        if (peer.session_id && peer.session_id !== myId && peer.is_active !== false) {
+          // Smaller ID initiates to existing voice peers
+          if (myId < peer.session_id && !this.peerConnections.has(peer.session_id)) {
+            await this.initiateCallToPeer(peer.session_id);
+          }
+        }
+      }
+    });
+  }
+
+  private async flushPendingCandidates(sessionId: string, pc: RTCPeerConnection) {
+    const queue = this.pendingCandidates.get(sessionId);
+    if (!queue || queue.length === 0) return;
+
+    for (const cand of queue) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(cand));
+      } catch (e) {
+        console.warn('[WebRTC] Error adding queued ICE candidate:', e);
+      }
+    }
+    this.pendingCandidates.delete(sessionId);
   }
 
   public async joinVoice(): Promise<void> {
     if (this.isConnected) return;
+
+    // Detect browser insecure context limitations on LAN (http://<ip>:8000)
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        throw new Error(
+          'Microphone access is blocked by your browser because this site is loaded over HTTP (not localhost).\n\n' +
+          'How to enable voice over LAN:\n' +
+          '1. In Chrome / Edge on this device, navigate to:\n' +
+          '   chrome://flags/#unsafely-treat-insecure-origin-as-secure\n' +
+          `2. Enable the flag and enter: ${window.location.origin}\n` +
+          '3. Click Relaunch and refresh this page.\n\n' +
+          'Or use the native Desktop Client (CollabBoardX-Client.exe).'
+        );
+      }
+      throw new Error('Microphone device not supported or access denied by browser.');
+    }
 
     try {
       // Capture local audio
@@ -93,26 +158,16 @@ export class WebRTCVoiceMesh {
       this.isConnected = true;
       this.startVAD();
 
-      // Broadcast join to peers
+      // Broadcast voice join state to room
       this.conn.send('VOICE_STATE_UPDATE', {
+        is_active: true,
         is_muted: this.isMuted,
         is_deafened: this.isDeafened,
         is_speaking: false,
       });
 
-      // Request roster to initiate offers to existing peers currently in room
-      this.conn.send('PRESENCE_ROSTER_REQ', {});
-
-      const myId = (this.conn as any).senderId;
-      this.conn.on('PRESENCE_ROSTER_RES', async (envelope) => {
-        const peers = (envelope.payload?.participants || []) as Array<{ session_id: string }>;
-        for (const peer of peers) {
-          // If our ID is smaller alphabetically, initiate offer to avoid glare
-          if (peer.session_id && peer.session_id !== myId && myId < peer.session_id && !this.peerConnections.has(peer.session_id)) {
-            await this.initiateCallToPeer(peer.session_id);
-          }
-        }
-      });
+      // Request roster of peers currently in voice
+      this.conn.send('VOICE_ROSTER_REQ', {});
 
       if (this.onStateChangeCallback) this.onStateChangeCallback();
     } catch (e) {
@@ -122,12 +177,15 @@ export class WebRTCVoiceMesh {
   }
 
   private createPeerConnection(targetSessionId: string): RTCPeerConnection {
-    // Air-gapped LAN configuration: no external STUN servers
+    // Air-gapped LAN configuration with public STUN fallback
     const pc = new RTCPeerConnection({
-      iceServers: [],
+      iceServers: [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+      ],
+      bundlePolicy: 'max-bundle',
     });
 
-    // Add local tracks
+    // Add local audio tracks
     if (this.localStream) {
       this.localStream.getAudioTracks().forEach((track) => {
         pc.addTrack(track, this.localStream!);
@@ -148,14 +206,19 @@ export class WebRTCVoiceMesh {
     pc.ontrack = (event) => {
       let audio = this.audioElements.get(targetSessionId);
       if (!audio) {
-        audio = new Audio();
+        audio = document.createElement('audio');
+        audio.id = `webrtc-voice-${targetSessionId}`;
         audio.autoplay = true;
         (audio as any).playsInline = true;
+        audio.style.display = 'none';
+        document.body.appendChild(audio);
         this.audioElements.set(targetSessionId, audio);
       }
       audio.srcObject = event.streams[0];
-      audio.play().catch((err) => console.warn('[WebRTC] Remote audio autoplay error:', err));
       audio.muted = this.isDeafened;
+      audio.play().catch((err) => {
+        console.warn('[WebRTC] Remote audio autoplay error:', err);
+      });
     };
 
     pc.onconnectionstatechange = () => {
@@ -172,7 +235,10 @@ export class WebRTCVoiceMesh {
     if (this.peerConnections.has(targetSessionId)) return;
     const pc = this.createPeerConnection(targetSessionId);
 
-    const offer = await pc.createOffer();
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: false,
+    });
     await pc.setLocalDescription(offer);
 
     this.conn.send('VOICE_SIGNAL_OFFER', {
@@ -188,6 +254,9 @@ export class WebRTCVoiceMesh {
     }
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    // Flush queued ICE candidates for this peer
+    await this.flushPendingCandidates(sourceSessionId, pc);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -205,6 +274,7 @@ export class WebRTCVoiceMesh {
     });
 
     this.conn.send('VOICE_STATE_UPDATE', {
+      is_active: true,
       is_muted: this.isMuted,
       is_deafened: this.isDeafened,
       is_speaking: false,
@@ -223,6 +293,7 @@ export class WebRTCVoiceMesh {
     }
 
     this.conn.send('VOICE_STATE_UPDATE', {
+      is_active: true,
       is_muted: this.isMuted,
       is_deafened: this.isDeafened,
       is_speaking: false,
@@ -262,6 +333,7 @@ export class WebRTCVoiceMesh {
         if (nowSpeaking !== this.isSpeaking) {
           this.isSpeaking = nowSpeaking;
           this.conn.send('VOICE_STATE_UPDATE', {
+            is_active: true,
             is_muted: this.isMuted,
             is_deafened: this.isDeafened,
             is_speaking: this.isSpeaking,
@@ -283,11 +355,24 @@ export class WebRTCVoiceMesh {
     const audio = this.audioElements.get(sessionId);
     if (audio) {
       audio.srcObject = null;
+      try {
+        audio.remove();
+      } catch (_) {}
       this.audioElements.delete(sessionId);
     }
+    this.pendingCandidates.delete(sessionId);
   }
 
   public leaveVoice(): void {
+    if (this.isConnected) {
+      this.conn.send('VOICE_STATE_UPDATE', {
+        is_active: false,
+        is_muted: true,
+        is_deafened: true,
+        is_speaking: false,
+      });
+    }
+
     if (this.vadInterval) {
       clearInterval(this.vadInterval);
       this.vadInterval = null;
@@ -304,8 +389,12 @@ export class WebRTCVoiceMesh {
     this.peerConnections.clear();
     this.audioElements.forEach((audio) => {
       audio.srcObject = null;
+      try {
+        audio.remove();
+      } catch (_) {}
     });
     this.audioElements.clear();
+    this.pendingCandidates.clear();
 
     this.isConnected = false;
     this.isSpeaking = false;
