@@ -15,8 +15,9 @@ import { PageThumbnailsDrawer } from '../features/notebook/components/PageThumbn
 import { StickerDrawer } from '../features/elements/StickerDrawer';
 import { AudioRecorderBar } from '../features/audio/AudioRecorderBar';
 import { ShareRoomModal } from '../features/canvas/components/ShareRoomModal';
-import { copyToClipboard } from '../core/utils/clipboard';
 import {
+  Wifi,
+  WifiOff,
   ArrowLeft,
   QrCode,
   Eye,
@@ -30,6 +31,8 @@ import {
   Lock,
   Unlock,
   MousePointer2,
+  RotateCcw,
+  RotateCw,
 } from 'lucide-react';
 
 // Initialize registries once
@@ -83,20 +86,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
   const [pendingCursorRequests, setPendingCursorRequests] = useState<
     Array<{ requester_session_id: string; display_name: string }>
   >([]);
-  const [copiedRoomCode, setCopiedRoomCode] = useState(false);
-
-  // Authenticated identity details
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => Boolean(localStorage.getItem('collabboard_auth_token')));
-  const [authenticatedUsername, setAuthenticatedUsername] = useState<string | null>(() => localStorage.getItem('collabboard_auth_username'));
-  const [hostUsername, setHostUsername] = useState<string | null>(null);
-
-  const handleCopyRoomCode = async () => {
-    const ok = await copyToClipboard(roomId);
-    if (ok) {
-      setCopiedRoomCode(true);
-      setTimeout(() => setCopiedRoomCode(false), 2000);
-    }
-  };
 
   const isHost = userRole === 'HOST';
   const isAccessDisabled = userRole === 'VIEWER' || (isBoardLocked && !isHost);
@@ -134,12 +123,10 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
     conn.onStatusChange((status) => {
       setConnStatus(status);
       if (status === 'CONNECTED') {
-        const token = localStorage.getItem('collabboard_auth_token');
         conn.send('ROOM_JOIN_REQ', {
           display_name: displayName,
           room_id: roomId,
           is_creator: isCreator,
-          auth_token: token || undefined,
         });
         conn.send('PRESENCE_ROSTER_REQ', {});
       }
@@ -147,15 +134,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
 
     const unsubAck = conn.on('ROOM_JOIN_ACK', (env) => {
       if (env.payload?.role) setUserRole(env.payload.role);
-      if (env.payload?.is_authenticated !== undefined) {
-        setIsAuthenticated(Boolean(env.payload.is_authenticated));
-      }
-      if (env.payload?.authenticated_username) {
-        setAuthenticatedUsername(env.payload.authenticated_username);
-      }
-      if (env.payload?.host_username) {
-        setHostUsername(env.payload.host_username);
-      }
       if (env.payload?.is_board_locked !== undefined) {
         setIsBoardLocked(Boolean(env.payload.is_board_locked));
       }
@@ -240,11 +218,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
       });
     });
 
-    const unsubKicked = conn.on('HOST_USER_KICKED', () => {
-      alert('You have been removed from this room by the Host.');
-      onLeave();
-    });
-
     conn.connect();
 
     return () => {
@@ -259,7 +232,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
       unsubLeft();
       unsubMuted();
       unsubChat();
-      unsubKicked();
       voiceMesh.leaveVoice();
       conn.disconnect();
     };
@@ -359,39 +331,29 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
   };
 
   const getStatusBadge = () => {
-    const isOnline = connStatus === 'CONNECTED';
-    const isPending = connStatus === 'CONNECTING' || connStatus === 'RECONNECTING';
-    const dotColor = isOnline ? '#22c55e' : isPending ? '#eab308' : '#ef4444';
-    const label = isOnline ? 'Connected' : isPending ? 'Reconnecting' : 'Offline';
-
-    return (
-      <div
-        title={`Network Status: ${connStatus}`}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          fontSize: 11,
-          fontWeight: 600,
-          color: dotColor,
-          background: 'rgba(255, 255, 255, 0.04)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          padding: '3px 8px',
-          borderRadius: 12,
-        }}
-      >
-        <div
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: dotColor,
-            boxShadow: `0 0 6px ${dotColor}`,
-          }}
-        />
-        <span className="cb-desktop-only">{label}</span>
-      </div>
-    );
+    switch (connStatus) {
+      case 'CONNECTED':
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#22c55e', fontSize: 12, fontWeight: 500 }}>
+            <Wifi size={13} /> Connected
+          </div>
+        );
+      case 'RECONNECTING':
+      case 'CONNECTING':
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#eab308', fontSize: 12, fontWeight: 500 }}>
+            <Wifi size={13} /> Reconnecting...
+          </div>
+        );
+      case 'ERROR':
+      case 'DISCONNECTED':
+      default:
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', fontSize: 12, fontWeight: 500 }}>
+            <WifiOff size={13} /> Disconnected
+          </div>
+        );
+    }
   };
 
   return (
@@ -447,11 +409,11 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           boxShadow: '0 2px 12px rgba(0, 0, 0, 0.4)',
         }}
       >
-        {/* Left Section: Back, Brand, Room ID Pill, Live Status */}
-        <div className="cb-header-left" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Left Section: Back, Brand, Room ID, Live Status */}
+        <div className="cb-header-left" style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <button
             onClick={onLeave}
-            title="Leave Room & Return to Dashboard"
+            title="Back to Dashboard"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -461,7 +423,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               borderRadius: 8,
               color: '#94a3b8',
               cursor: 'pointer',
-              padding: '6px 9px',
+              padding: '6px 10px',
               transition: 'all 0.15s ease',
             }}
           >
@@ -478,7 +440,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                 color: '#ffffff',
                 fontSize: 10,
                 fontWeight: 800,
-                padding: '2px 5px',
+                padding: '2px 6px',
                 borderRadius: 4,
               }}
             >
@@ -486,106 +448,19 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             </span>
           </div>
 
-          <button
-            onClick={handleCopyRoomCode}
-            title="Click to copy Room Code"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              background: 'rgba(255, 255, 255, 0.05)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 8,
-              padding: '4px 9px',
-              fontSize: 12,
-              fontWeight: 600,
-              color: copiedRoomCode ? '#4ade80' : '#cbd5e1',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <span style={{ color: '#64748b' }}>#</span>
-            <span>{copiedRoomCode ? 'Copied!' : roomId}</span>
-          </button>
+          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
+
+          <div className="cb-desktop-only" style={{ fontSize: 13, color: '#cbd5e1' }}>
+            Room: <strong style={{ color: '#ffffff' }}>{roomId}</strong>
+          </div>
+
+          <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
 
           <div className="cb-status-badge">{getStatusBadge()}</div>
         </div>
 
-        {/* Center Section: Main Workstation Tab Switcher (Whiteboard vs Meeting) */}
-        <div className="cb-header-center" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <nav
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: 'rgba(30, 41, 59, 0.9)',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              padding: 3,
-              borderRadius: 10,
-              gap: 2,
-            }}
-          >
-            <button
-              onClick={() => setActiveTab('whiteboard')}
-              className="cb-tab-btn"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 7,
-                border: 'none',
-                background: activeTab === 'whiteboard' ? '#3b82f6' : 'transparent',
-                color: activeTab === 'whiteboard' ? '#ffffff' : '#94a3b8',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <PenTool size={13} />
-              <span>Whiteboard</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab('meeting')}
-              className="cb-tab-btn"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 14px',
-                borderRadius: 7,
-                border: 'none',
-                background: activeTab === 'meeting' ? '#3b82f6' : 'transparent',
-                color: activeTab === 'meeting' ? '#ffffff' : '#94a3b8',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-              }}
-            >
-              <Users size={13} />
-              <span>Meeting</span>
-              {participantCount > 0 && (
-                <span
-                  style={{
-                    background: activeTab === 'meeting' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)',
-                    color: '#ffffff',
-                    padding: '1px 5px',
-                    borderRadius: 8,
-                    fontSize: 10,
-                    fontWeight: 700,
-                  }}
-                >
-                  {participantCount}
-                </span>
-              )}
-            </button>
-          </nav>
-        </div>
-
-        {/* Right Section: Host Controls, Quick Tools, Chat, User Profile */}
-        <div className="cb-header-right" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Center Section: Main Workstation Tab Switcher & Master Access Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {/* Host Master Board Access Switch */}
           {isHost ? (
             <button
@@ -598,12 +473,12 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 5,
-                background: isBoardLocked ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.15)',
+                gap: 6,
+                background: isBoardLocked ? 'rgba(239, 68, 68, 0.25)' : 'rgba(34, 197, 94, 0.2)',
                 color: isBoardLocked ? '#f87171' : '#4ade80',
-                border: `1px solid ${isBoardLocked ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.3)'}`,
+                border: `1px solid ${isBoardLocked ? 'rgba(239, 68, 68, 0.5)' : 'rgba(34, 197, 94, 0.4)'}`,
                 borderRadius: 8,
-                padding: '5px 10px',
+                padding: '5px 12px',
                 fontSize: 12,
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -611,10 +486,30 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               }}
             >
               {isBoardLocked ? <Lock size={13} /> : <Unlock size={13} />}
-              <span className="cb-desktop-only">{isBoardLocked ? 'Board: Locked' : 'Board: Open'}</span>
+              <span className="cb-desktop-only">{isBoardLocked ? 'Board Access: Disabled' : 'Board Access: Open'}</span>
+              <span className="cb-badge-text" style={{ display: 'none' }}>{isBoardLocked ? 'Locked' : 'Open'}</span>
             </button>
+          ) : isBoardLocked ? (
+            <span
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: 'rgba(239, 68, 68, 0.2)',
+                color: '#f87171',
+                border: '1px solid rgba(239, 68, 68, 0.4)',
+                borderRadius: 8,
+                padding: '5px 10px',
+                fontSize: 11,
+                fontWeight: 700,
+              }}
+            >
+              <Lock size={12} />
+              <span>Read-Only</span>
+            </span>
           ) : null}
 
+<<<<<<< HEAD
           {/* User Role Badge */}
           {isHost ? (
             <span
@@ -679,6 +574,54 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
 =======
           ) : null}
 
+=======
+          {/* Quick Undo & Redo Header Controls (Always visible in Whiteboard mode) */}
+          {activeTab === 'whiteboard' && !isAccessDisabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+              <button
+                onClick={() => store.undo()}
+                disabled={!store.canUndo()}
+                title="Undo (Ctrl+Z)"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: store.canUndo() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 7,
+                  color: store.canUndo() ? '#ffffff' : '#64748b',
+                  opacity: store.canUndo() ? 1 : 0.4,
+                  cursor: store.canUndo() ? 'pointer' : 'not-allowed',
+                  padding: '5px 8px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <RotateCcw size={14} />
+              </button>
+              <button
+                onClick={() => store.redo()}
+                disabled={!store.canRedo()}
+                title="Redo (Ctrl+Y)"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: store.canRedo() ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.04)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: 7,
+                  color: store.canRedo() ? '#ffffff' : '#64748b',
+                  opacity: store.canRedo() ? 1 : 0.4,
+                  cursor: store.canRedo() ? 'pointer' : 'not-allowed',
+                  padding: '5px 8px',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <RotateCw size={14} />
+              </button>
+            </div>
+          )}
+
+>>>>>>> parent of a56dc48 (login flow change)
           <nav
             style={{
               display: 'flex',
@@ -754,7 +697,10 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
 
         {/* Right Section: Quick Mic Mute, Share Pointer, Share Modal Trigger, User Profile Badge */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+<<<<<<< HEAD
 >>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
+=======
+>>>>>>> parent of a56dc48 (login flow change)
           {/* Host Pending Cursor Share Approvals */}
           {isHost && pendingCursorRequests.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -775,7 +721,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                 >
                   <MousePointer2 size={12} />
                   <span>
-                    <strong>{req.display_name}</strong>
+                    <strong>{req.display_name}</strong> wants to show cursor
                   </span>
                   <button
                     onClick={() => handleCursorDecision(req.requester_session_id, true)}
@@ -813,7 +759,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           )}
 
           {/* Participant Share Cursor Request Button */}
-          {!isHost && (
+          {!isHost && userRole !== 'VIEWER' && (
             <button
               onClick={() => {
                 if (cursorShareStatus === 'OFF') {
@@ -834,7 +780,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 5,
+                gap: 6,
                 background:
                   cursorShareStatus === 'SHARING'
                     ? 'rgba(34, 197, 94, 0.2)'
@@ -855,7 +801,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                     : 'rgba(255, 255, 255, 0.12)'
                 }`,
                 borderRadius: 8,
-                padding: '5px 10px',
+                padding: '5px 11px',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: cursorShareStatus === 'PENDING' ? 'not-allowed' : 'pointer',
@@ -867,7 +813,7 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                 {cursorShareStatus === 'SHARING'
                   ? 'Pointer: Shared'
                   : cursorShareStatus === 'PENDING'
-                  ? 'Pending...'
+                  ? 'Request Pending...'
                   : 'Share Pointer'}
               </span>
             </button>
@@ -881,18 +827,18 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 5,
+                gap: 6,
                 background: voiceMesh.isMuted ? 'rgba(239, 68, 68, 0.2)' : 'rgba(34, 197, 94, 0.2)',
                 color: voiceMesh.isMuted ? '#ef4444' : '#22c55e',
                 border: `1px solid ${voiceMesh.isMuted ? 'rgba(239, 68, 68, 0.35)' : 'rgba(34, 197, 94, 0.35)'}`,
                 borderRadius: 8,
-                padding: '5px 10px',
+                padding: '5px 11px',
                 fontSize: 12,
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
             >
-              {voiceMesh.isMuted ? <MicOff size={13} /> : <Mic size={13} />}
+              {voiceMesh.isMuted ? <MicOff size={14} /> : <Mic size={14} />}
               <span className="cb-desktop-only">{voiceMesh.isMuted ? 'Muted' : 'Speaking'}</span>
             </button>
           )}
@@ -904,19 +850,19 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
+              gap: 6,
               background: 'rgba(59, 130, 246, 0.2)',
               color: '#60a5fa',
               border: '1px solid rgba(59, 130, 246, 0.3)',
               borderRadius: 8,
-              padding: '5px 10px',
+              padding: '5px 11px',
               fontSize: 12,
               fontWeight: 600,
               cursor: 'pointer',
             }}
           >
-            <QrCode size={13} />
-            <span className="cb-desktop-only">Share</span>
+            <QrCode size={14} />
+            <span className="cb-desktop-only">Share &amp; QR</span>
           </button>
 
           {/* Quick Chat Side Panel Toggle Button */}
@@ -932,12 +878,12 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 5,
+              gap: 6,
               background: isChatOpen ? 'rgba(59, 130, 246, 0.35)' : 'rgba(255, 255, 255, 0.08)',
               color: isChatOpen ? '#93c5fd' : '#cbd5e1',
               border: `1px solid ${isChatOpen ? 'rgba(59, 130, 246, 0.55)' : 'rgba(255, 255, 255, 0.15)'}`,
               borderRadius: 8,
-              padding: '5px 10px',
+              padding: '5px 11px',
               fontSize: 12,
               fontWeight: 600,
               cursor: 'pointer',
@@ -945,18 +891,18 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               transition: 'all 0.15s ease',
             }}
           >
-            <MessageSquare size={13} />
+            <MessageSquare size={14} />
             <span className="cb-desktop-only">Chat</span>
             {unreadChatCount > 0 && (
               <span
                 style={{
                   background: '#ef4444',
                   color: '#ffffff',
-                  padding: '1px 5px',
+                  padding: '1px 6px',
                   borderRadius: 10,
                   fontSize: 10,
                   fontWeight: 800,
-                  lineHeight: '12px',
+                  lineHeight: '13px',
                 }}
               >
                 {unreadChatCount}
@@ -967,26 +913,8 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
           <div className="cb-desktop-only" style={{ width: 1, height: 18, background: 'rgba(255, 255, 255, 0.15)' }} />
 
           {/* User Display Badge with Role Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: '50%',
-                background: userRole === 'HOST' ? '#f59e0b' : userRole === 'VIEWER' ? '#a855f7' : '#3b82f6',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#ffffff',
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              {displayName ? displayName.charAt(0).toUpperCase() : 'U'}
-            </div>
-            <span className="cb-desktop-only" style={{ fontSize: 12, color: '#f8fafc', fontWeight: 600 }}>
-              {displayName} {authenticatedUsername ? `(@${authenticatedUsername})` : ''}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="cb-desktop-only" style={{ fontSize: 13, color: '#f8fafc', fontWeight: 500 }}>{displayName}</span>
             <span
               style={{
                 background:
@@ -1003,18 +931,18 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
                     ? 'rgba(168, 85, 247, 0.3)'
                     : 'rgba(59, 130, 246, 0.3)'
                 }`,
-                padding: '2px 7px',
-                borderRadius: 10,
-                fontSize: 10,
-                fontWeight: 700,
+                padding: '2px 8px',
+                borderRadius: 12,
+                fontSize: 11,
+                fontWeight: 600,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 3,
+                gap: 4,
               }}
             >
-              {userRole === 'HOST' && <Crown size={11} />}
-              {userRole === 'VIEWER' && <Eye size={11} />}
-              {userRole === 'EDITOR' && <Edit3 size={11} />}
+              {userRole === 'HOST' && <Crown size={12} />}
+              {userRole === 'VIEWER' && <Eye size={12} />}
+              {userRole === 'EDITOR' && <Edit3 size={12} />}
               <span className="cb-desktop-only">{userRole}</span>
             </span>
           </div>
@@ -1144,8 +1072,6 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
             currentUserId={currentUserId}
             isOpen={isChatOpen}
             onClose={() => setIsChatOpen(false)}
-            isHost={isHost}
-            isAuthenticated={isAuthenticated}
           />
 
           {/* Infinite Canvas Viewport (Read-only enforcement when access disabled) */}

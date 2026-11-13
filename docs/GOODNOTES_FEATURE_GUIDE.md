@@ -25,13 +25,6 @@
 16. [Keyboard Shortcuts Quick Reference](#16-keyboard-shortcuts-quick-reference)
 17. [Workstation Organization, Permissions & Moderation](#17-workstation-organization-permissions--moderation)
 18. [Mobile & Touchscreen Responsive Workstation Layout](#18-mobile--touchscreen-responsive-workstation-layout)
-19. [Server-Side Notebook Version Control & Snapshot Restores](#19-server-side-notebook-version-control--snapshot-restores)
-20. [Sticker Drawer Modernization, Sticky Notes & Image Resizing](#20-sticker-drawer-modernization-sticky-notes--image-resizing)
-21. [Geometry & Shape Recognition Improvements](#21-geometry--shape-recognition-improvements)
-22. [Room Security, Kick & Ban System, and Chat Governance](#22-room-security-kick--ban-system-and-chat-governance)
-23. [Decluttered Workstation Header & Reliable Toolbar Dropdowns](#23-decluttered-workstation-header--reliable-toolbar-dropdowns)
-24. [User Authentication, Username Ownership & Guest Spectator Flow](#24-user-authentication-username-ownership--guest-spectator-flow)
-25. [In-Place Canvas Text Box, Return to Home & Universal LAN Clipboard](#25-in-place-canvas-text-box-return-to-home--universal-lan-clipboard)
 
 ---
 
@@ -310,9 +303,7 @@ CollabBoard X includes built-in server-side version control tailored for lecture
 - Each user (`username` or IP address fallback) is allotted **3 persistent notebook version slots** stored directly on the server's SQLite WAL database.
 - The UI displays an active slot status indicator (e.g. `2 / 3 Slots Used`) with 3 visual slot pills in the **Meeting & Controls** administration tab.
 
-### 19.2 Saving Notebook Versions (Host-Governed)
-- Saving, overwriting, restoring, and deleting notebook versions is **strictly governed by the Room Host**.
-- Non-host participants and spectators see an informational card indicating that notebook version history is managed by the Room Host. The server enforces `role == "HOST"` for all version mutations.
+### 19.2 Saving Notebook Versions
 - Enter a version title (or allow the app to auto-generate a timestamped name, e.g. `Notebook v2 (10:45 AM)`).
 - Click **`[ 💾 Save ]`**. The server atomically snapshots all canvas elements across all notebook pages, including paper patterns, background colors, and sequence numbers.
 - If all 3 slots are occupied, the app alerts the user and opens a replacement dropdown, allowing you to select an existing version to overwrite or delete one to free a slot.
@@ -327,6 +318,7 @@ CollabBoard X includes built-in server-side version control tailored for lecture
 - Click the **`[ 🗑️ Trash ]`** icon next to any version to permanently remove it from server storage and free up a slot.
 - For local archival, use the **`[ 📥 Export JSON ]`** and **`[ 📤 Import JSON ]`** options to save or load board states directly from `.json` files on your computer.
 
+<<<<<<< HEAD
 ---
 
 ## 20. Sticker Drawer Modernization, Sticky Notes & Image Resizing
@@ -440,3 +432,5 @@ CollabBoard X integrates a full-fledged user authentication and room ownership m
 
 =======
 >>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
+=======
+>>>>>>> parent of a56dc48 (login flow change)

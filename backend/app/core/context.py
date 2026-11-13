@@ -18,7 +18,6 @@ class ApplicationContext:
     connection_manager: ConnectionManager = field(default_factory=ConnectionManager)
     event_bus: EventRegistry = field(default_factory=EventRegistry)
     repositories: Dict[str, Any] = field(default_factory=dict)
-    modules: Dict[str, Any] = field(default_factory=dict)
     room_manager: Optional[Any] = None
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("collabboard"))
 

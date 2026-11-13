@@ -16,20 +16,20 @@ export class ShapeRecognizer {
    * Returns RecognizedShapeResult if a geometric shape is recognized, or null if freehand.
    */
   static recognize(points: [number, number][]): RecognizedShapeResult | null {
-    if (!points || points.length < 6) return null;
+    if (!points || points.length < 8) return null;
 
     const start = points[0];
     const end = points[points.length - 1];
     const totalDist = Math.hypot(end[0] - start[0], end[1] - start[1]);
 
-    // Calculate total path length
+    // Calculate path length
     let pathLength = 0;
     for (let i = 1; i < points.length; i++) {
       pathLength += Math.hypot(points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]);
     }
-    if (pathLength < 25) return null;
+    if (pathLength < 30) return null;
 
-    // Calculate axis-aligned bounding box
+    // Calculate bounding box
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const [px, py] of points) {
       if (px < minX) minX = px;
@@ -40,19 +40,14 @@ export class ShapeRecognizer {
     const width = maxX - minX;
     const height = maxY - minY;
     const diag = Math.hypot(width, height);
-    if (diag < 15) return null;
 
-    // Determine if stroke loops back to form a closed shape
-    const isClosed = totalDist < Math.max(32, diag * 0.28) || (totalDist / pathLength < 0.22);
+    const isClosed = totalDist < Math.max(25, diag * 0.2);
 
-    // ==========================================
     // Case 1: Open Strokes (Straight Line or Arrow)
-    // ==========================================
     if (!isClosed) {
+      // Line straightness check: ratio of direct distance to path length
       const straightness = totalDist / pathLength;
-
-      // Pure Straight Line (direct distance is >= 86% of actual path length)
-      if (straightness > 0.86) {
+      if (straightness > 0.88) {
         return {
           type: 'LINE',
           x: start[0],
@@ -62,65 +57,41 @@ export class ShapeRecognizer {
         };
       }
 
-      // Directional Arrow: Check if first ~70% is a straight shaft and last ~30% forms an arrowhead
-      const splitIdx = Math.floor(points.length * 0.70);
-      const shaftPoints = points.slice(0, splitIdx);
+      // Check for Arrow: straight shaft with an arrowhead near the end
+      const shaftPoints = points.slice(0, Math.floor(points.length * 0.75));
       let shaftLen = 0;
-      for (let i = 1; i < shaftPoints.length; i++) {
+      for (let i = 1; i < shaftLen; i++) {
         shaftLen += Math.hypot(shaftPoints[i][0] - shaftPoints[i - 1][0], shaftPoints[i][1] - shaftPoints[i - 1][1]);
       }
-      const shaftStart = shaftPoints[0];
-      const shaftEnd = shaftPoints[shaftPoints.length - 1];
-      const shaftDirect = Math.hypot(shaftEnd[0] - shaftStart[0], shaftEnd[1] - shaftStart[1]);
-
-      if (shaftLen > 25 && shaftDirect / shaftLen > 0.82) {
-        // Evaluate head points deflection
-        const headPoints = points.slice(splitIdx);
-        let headDeflection = 0;
-        const shaftAngle = Math.atan2(shaftEnd[1] - shaftStart[1], shaftEnd[0] - shaftStart[0]);
-        for (let i = 1; i < headPoints.length; i++) {
-          const segAngle = Math.atan2(headPoints[i][1] - headPoints[i - 1][1], headPoints[i][0] - headPoints[i - 1][0]);
-          let diff = Math.abs(segAngle - shaftAngle);
-          if (diff > Math.PI) diff = 2 * Math.PI - diff;
-          if (diff > 0.4) headDeflection++;
-        }
-
-        if (headDeflection >= 1) {
-          return {
-            type: 'ARROW',
-            x: start[0],
-            y: start[1],
-            width: shaftEnd[0] - start[0],
-            height: shaftEnd[1] - start[1],
-          };
-        }
+      const shaftDirect = Math.hypot(
+        shaftPoints[shaftPoints.length - 1][0] - shaftPoints[0][0],
+        shaftPoints[shaftPoints.length - 1][1] - shaftPoints[0][1]
+      );
+      if (shaftLen > 20 && shaftDirect / shaftLen > 0.85) {
+        return {
+          type: 'ARROW',
+          x: start[0],
+          y: start[1],
+          width: end[0] - start[0],
+          height: end[1] - start[1],
+        };
       }
     }
 
-    // ==========================================
-    // Case 2: Closed Shapes (Circle, Ellipse, Rectangle, Triangle)
-    // ==========================================
-    if (isClosed && diag > 28) {
-      // 1. Compute Polygon Area via Shoelace Formula
-      let shoelaceArea = 0;
-      for (let i = 0; i < points.length; i++) {
-        const j = (i + 1) % points.length;
-        shoelaceArea += points[i][0] * points[j][1];
-        shoelaceArea -= points[j][0] * points[i][1];
-      }
-      shoelaceArea = Math.abs(shoelaceArea) / 2;
+    // Case 2: Closed Shapes (Circle, Ellipse, Rectangle, Triangle, Polygon)
+    if (isClosed && diag > 40) {
+      // Estimate polygon vertices by identifying sharp direction changes (corners)
+      const simplified = this.douglasPeucker(points, Math.max(6, diag * 0.05));
+      const cornerCount = simplified.length - 1; // Last equals first
 
-      const bboxArea = Math.max(1, width * height);
-      const areaRatio = shoelaceArea / bboxArea;
-
-      // 2. Measure Radial Distance Variance for Circle/Ellipse Fit
+      // 1. Circle or Ellipse (Round contour, smooth curvature)
       const cx = (minX + maxX) / 2;
       const cy = (minY + maxY) / 2;
-      const rx = Math.max(1, width / 2);
-      const ry = Math.max(1, height / 2);
+      const rx = width / 2;
+      const ry = height / 2;
 
       let ellipseFitVariance = 0;
-      const sampleStep = Math.max(1, Math.floor(points.length / 24));
+      const sampleStep = Math.max(1, Math.floor(points.length / 20));
       let sampleCount = 0;
 
       for (let i = 0; i < points.length; i += sampleStep) {
@@ -130,11 +101,11 @@ export class ShapeRecognizer {
         ellipseFitVariance += Math.abs(norm - 1.0);
         sampleCount++;
       }
-      const avgEllipseVariance = ellipseFitVariance / Math.max(1, sampleCount);
+      const avgEllipseVariance = ellipseFitVariance / sampleCount;
 
-      // Circle & Ellipse (smooth curve around centroid, low radial variance)
-      if (avgEllipseVariance < 0.28 && areaRatio >= 0.55 && areaRatio <= 0.95) {
-        const isCircle = Math.abs(width - height) / Math.max(width, height) < 0.20;
+      if (avgEllipseVariance < 0.22 && cornerCount >= 5) {
+        // Fits circle or ellipse!
+        const isCircle = Math.abs(width - height) / Math.max(width, height) < 0.15;
         const finalDim = isCircle ? Math.max(width, height) : undefined;
         return {
           type: 'ELLIPSE',
@@ -145,9 +116,20 @@ export class ShapeRecognizer {
         };
       }
 
-      // Rectangle & Square (high bounding box fill ratio > 0.68 with sharp corner profile)
-      if (areaRatio >= 0.68) {
-        const isSquare = Math.abs(width - height) / Math.max(width, height) < 0.16;
+      // 2. Triangle (3 dominant corners)
+      if (cornerCount === 3) {
+        return {
+          type: 'TRIANGLE',
+          x: minX,
+          y: minY,
+          width,
+          height,
+        };
+      }
+
+      // 3. Rectangle / Square (4 dominant corners)
+      if (cornerCount === 4) {
+        const isSquare = Math.abs(width - height) / Math.max(width, height) < 0.12;
         const finalDim = isSquare ? Math.max(width, height) : undefined;
         return {
           type: 'RECTANGLE',
@@ -158,21 +140,8 @@ export class ShapeRecognizer {
         };
       }
 
-      // Triangle (area occupies roughly 32% - 66% of its bounding box)
-      if (areaRatio >= 0.30 && areaRatio <= 0.66) {
-        return {
-          type: 'TRIANGLE',
-          x: minX,
-          y: minY,
-          width,
-          height,
-        };
-      }
-
-      // General Polygon fallback for other closed loops
-      const simplified = this.douglasPeucker(points, Math.max(5, diag * 0.05));
-      const cornerCount = Math.max(3, simplified.length - 1);
-      if (cornerCount >= 4 && cornerCount <= 8) {
+      // 4. Polygon / Star
+      if (cornerCount >= 5 && cornerCount <= 8 && avgEllipseVariance >= 0.22) {
         return {
           type: 'POLYGON',
           x: minX,

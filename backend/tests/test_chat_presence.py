@@ -149,64 +149,6 @@ async def test_chat_and_presence_flow(tmp_path: Path):
     participants = bob_roster[0].payload["participants"]
     assert len(participants) == 2
 
-    # 6. Test Chat Restriction Policy Enforcements
-    # 6a. Host sets policy to HOST_ONLY
-    policy_env = MessageEnvelope(
-        room_id="chat-room",
-        sender_id="sess-alice",
-        type="HOST_SET_CHAT_POLICY",
-        payload={"policy": "HOST_ONLY"},
-    )
-    await context.event_bus.dispatch(alice, policy_env)
-    assert chat_mod.room_chat_policies.get("chat-room") == "HOST_ONLY"
-    policy_broadcasts = [m for m in bob.inbox if m.type == "ROOM_CHAT_POLICY_CHANGED"]
-    assert len(policy_broadcasts) == 1
-    assert policy_broadcasts[0].payload["chat_policy"] == "HOST_ONLY"
-
-    # Bob tries to send public chat in HOST_ONLY mode -> Should be rejected with CHAT_ERROR
-    bob_public_attempt = MessageEnvelope(
-        room_id="chat-room",
-        sender_id="sess-bob",
-        type="CHAT_MSG_SEND",
-        payload={"content": "Can everyone see this?", "target_type": "EVERYONE"},
-    )
-    await context.event_bus.dispatch(bob, bob_public_attempt)
-    chat_errors = [m for m in bob.inbox if m.type == "CHAT_ERROR"]
-    assert len(chat_errors) >= 1
-    assert "host-only" in chat_errors[-1].payload["message"].lower()
-
-    # Bob sends private message to HOST in HOST_ONLY mode -> Allowed
-    bob_host_msg = MessageEnvelope(
-        room_id="chat-room",
-        sender_id="sess-bob",
-        type="CHAT_MSG_SEND",
-        payload={"content": "Private message to Alice", "target_type": "HOST_ONLY"},
-    )
-    await context.event_bus.dispatch(bob, bob_host_msg)
-    alice_private = [m for m in alice.inbox if m.type == "CHAT_MSG_BROADCAST" and m.payload.get("content") == "Private message to Alice"]
-    assert len(alice_private) == 1
-
-    # 6b. Host sets policy to DISABLED
-    disable_policy_env = MessageEnvelope(
-        room_id="chat-room",
-        sender_id="sess-alice",
-        type="HOST_SET_CHAT_POLICY",
-        payload={"policy": "DISABLED"},
-    )
-    await context.event_bus.dispatch(alice, disable_policy_env)
-    assert chat_mod.room_chat_policies.get("chat-room") == "DISABLED"
-
-    # Bob tries to send message when chat is DISABLED -> Rejected
-    bob_disabled_attempt = MessageEnvelope(
-        room_id="chat-room",
-        sender_id="sess-bob",
-        type="CHAT_MSG_SEND",
-        payload={"content": "Trying to chat...", "target_type": "HOST_ONLY"},
-    )
-    await context.event_bus.dispatch(bob, bob_disabled_attempt)
-    chat_disabled_errors = [m for m in bob.inbox if m.type == "CHAT_ERROR" and "disabled" in m.payload["message"].lower()]
-    assert len(chat_disabled_errors) >= 1
-
     # Cleanup
     await chat_mod.shutdown()
     await presence_mod.shutdown()

@@ -21,7 +21,6 @@ export class ConnectionManager {
   private maxReconnectAttempts = 10;
   private reconnectTimeoutTimer: number | null = null;
   private outboundQueue: MessageEnvelope<any>[] = [];
-  public isKicked = false;
 
   constructor(roomId: string, senderId: string, wsUrl?: string) {
     this.roomId = roomId;
@@ -39,11 +38,6 @@ export class ConnectionManager {
   }
 
   public connect(): void {
-    if (this.isKicked) {
-      console.warn('[ConnectionManager] User is kicked; connection aborted.');
-      return;
-    }
-
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
@@ -69,14 +63,9 @@ export class ConnectionManager {
         }
       };
 
-      this.ws.onclose = (event: CloseEvent) => {
+      this.ws.onclose = () => {
         this.cleanupSocket();
         this.setStatus('DISCONNECTED');
-        if (event.code === 1008 || this.isKicked) {
-          console.warn('[ConnectionManager] Disconnected due to room expulsion (Code 1008). Reconnect aborted.');
-          this.isKicked = true;
-          return;
-        }
         this.scheduleReconnect();
       };
 
@@ -87,21 +76,11 @@ export class ConnectionManager {
     } catch (e) {
       console.error('[ConnectionManager] Exception connecting WebSocket:', e);
       this.setStatus('ERROR');
-      if (!this.isKicked) {
-        this.scheduleReconnect();
-      }
+      this.scheduleReconnect();
     }
   }
 
   private handleIncomingEnvelope(envelope: MessageEnvelope): void {
-    if (envelope.type === 'HOST_USER_KICKED') {
-      console.warn('[ConnectionManager] Received HOST_USER_KICKED envelope. Permanent ejection.');
-      this.isKicked = true;
-      if (this.reconnectTimeoutTimer) {
-        clearTimeout(this.reconnectTimeoutTimer);
-        this.reconnectTimeoutTimer = null;
-      }
-    }
     // 1. Sequence gap detection
     if (typeof envelope.server_seq === 'number' && envelope.server_seq > 0) {
       const expectedSeq = this.lastServerSeq + 1;

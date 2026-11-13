@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS saved_notebook_versions (
 
 CREATE INDEX IF NOT EXISTS idx_saved_notebooks_owner 
 ON saved_notebook_versions(owner_key, created_at DESC);
+<<<<<<< HEAD
 
 CREATE TABLE IF NOT EXISTS users (
     username TEXT PRIMARY KEY COLLATE NOCASE,
@@ -111,6 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_user
 ON user_sessions(username);
 =======
 >>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
+=======
+>>>>>>> parent of a56dc48 (login flow change)
 """
 
 

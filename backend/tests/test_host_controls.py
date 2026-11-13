@@ -238,17 +238,5 @@ async def test_host_controls_and_snapshots(tmp_path: Path):
     assert len(kicked_msg) == 1
     assert kicked_msg[0].payload["reason"] == "Disruptive behavior"
 
-    # Verify banned status prevents kicked user from re-entering
-    assert host_mod.is_user_banned("admin-room", guest_sess) is True
-
-    # Reconnection attempt with different session ID but same username / IP is identified as banned
-    reconnect_attempt = MockSession("sess-reconnect-new", role="PARTICIPANT", display_name="GuestBob")
-    assert host_mod.is_user_banned("admin-room", reconnect_attempt) is True
-
-    # Innocent third party is not banned
-    innocent_sess = MockSession("sess-innocent", role="PARTICIPANT", display_name="Charlie")
-    innocent_sess.remote_address = "192.168.1.55:9090"
-    assert host_mod.is_user_banned("admin-room", innocent_sess) is False
-
     await host_mod.shutdown()
     await canvas_mod.shutdown()

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CanvasStore } from '../canvas/state/CanvasStore';
-import { X, Sparkles, StickyNote, Smile, Plus, Check } from 'lucide-react';
+import { X, Sparkles, StickyNote, Smile, Award, Network, Plus, Check } from 'lucide-react';
 
 interface StickerDrawerProps {
   store: CanvasStore;
@@ -8,13 +8,13 @@ interface StickerDrawerProps {
   onClose: () => void;
 }
 
-type Category = 'notes' | 'emojis' | 'math';
+type Category = 'notes' | 'emojis' | 'badges' | 'diagram' | 'math';
 
 interface StickerItem {
   id: string;
   label: string;
   category: Category;
-  stickerType: 'note' | 'emoji';
+  stickerType: 'note' | 'emoji' | 'badge';
   color?: string;
   strokeColor?: string;
   preview: string;
@@ -103,7 +103,127 @@ const STICKERS: StickerItem[] = [
   { id: 'emoji-trophy', label: 'Winner', category: 'emojis', stickerType: 'emoji', preview: '🏆', width: 70, height: 70 },
   { id: 'emoji-brain', label: 'Brain', category: 'emojis', stickerType: 'emoji', preview: '🧠', width: 70, height: 70 },
 
-  // 3. Math & Formulas
+  // 3. Badges & Rubber Stamps
+  {
+    id: 'badge-approved',
+    label: 'Approved',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#dcfce7',
+    strokeColor: '#16a34a',
+    preview: 'APPROVED ✔',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-urgent',
+    label: 'Urgent',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#fee2e2',
+    strokeColor: '#dc2626',
+    preview: 'URGENT ⚠',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-draft',
+    label: 'Draft',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#f1f5f9',
+    strokeColor: '#475569',
+    preview: 'DRAFT ✎',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-verified',
+    label: 'Verified',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#e0f2fe',
+    strokeColor: '#0284c7',
+    preview: 'VERIFIED ★',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-wip',
+    label: 'In Progress',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#fef3c7',
+    strokeColor: '#d97706',
+    preview: 'IN PROGRESS ⏳',
+    width: 140,
+    height: 48,
+  },
+  {
+    id: 'badge-rejected',
+    label: 'Rejected',
+    category: 'badges',
+    stickerType: 'badge',
+    color: '#ffe4e6',
+    strokeColor: '#e11d48',
+    preview: 'REJECTED ✖',
+    width: 140,
+    height: 48,
+  },
+
+  // 4. Diagram & Architecture
+  {
+    id: 'diag-start',
+    label: 'Terminal Point',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#e2e8f0',
+    preview: '([ START / END ])',
+    width: 150,
+    height: 60,
+  },
+  {
+    id: 'diag-proc',
+    label: 'Process Block',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#dbeafe',
+    preview: '[ Process Step ]\nExecute computation',
+    width: 160,
+    height: 80,
+  },
+  {
+    id: 'diag-decision',
+    label: 'Decision Fork',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#fef3c7',
+    preview: '< Is Valid? >\nYes ⟶ / No ⟵',
+    width: 150,
+    height: 80,
+  },
+  {
+    id: 'diag-db',
+    label: 'Database Table',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#fae8ff',
+    preview: '[( SQLite WAL )]\nAuthoritative state',
+    width: 160,
+    height: 80,
+  },
+  {
+    id: 'diag-cloud',
+    label: 'Server Gateway',
+    category: 'diagram',
+    stickerType: 'note',
+    color: '#cffafe',
+    preview: '☁️ Central Server\nWebSocket + Raw TCP',
+    width: 160,
+    height: 80,
+  },
+
+  // 5. Math & Equations
   {
     id: 'math-sum',
     label: 'Summation',
@@ -249,9 +369,11 @@ export const StickerDrawer: React.FC<StickerDrawerProps> = ({ store, isOpen, onC
         }}
       >
         {[
-          { id: 'notes', label: 'Sticky Notes', icon: <StickyNote size={13} /> },
+          { id: 'notes', label: 'Sticky', icon: <StickyNote size={13} /> },
           { id: 'emojis', label: 'Reactions', icon: <Smile size={13} /> },
-          { id: 'math', label: 'Math Formulas', icon: <span style={{ fontSize: 13 }}>∑</span> },
+          { id: 'badges', label: 'Stamps', icon: <Award size={13} /> },
+          { id: 'diagram', label: 'Diagram', icon: <Network size={13} /> },
+          { id: 'math', label: 'Math', icon: <span style={{ fontSize: 13 }}>∑</span> },
         ].map((tab) => (
           <button
             key={tab.id}
