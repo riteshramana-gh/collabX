@@ -212,11 +212,6 @@ export class CanvasStore {
   }
 
   public beginTransaction() {
-    // If a transaction was left open, commit it first to prevent stuck states
-    if (this.activeTransaction && this.activeTransaction.length > 0) {
-      this.undoStack.push(this.activeTransaction);
-      this.redoStack = [];
-    }
     this.activeTransaction = [];
   }
 
@@ -226,10 +221,6 @@ export class CanvasStore {
       this.redoStack = [];
       this.notify();
     }
-    this.activeTransaction = null;
-  }
-
-  public cancelTransaction() {
     this.activeTransaction = null;
   }
 
@@ -280,7 +271,7 @@ export class CanvasStore {
   }
 
   public canUndo(): boolean {
-    return this.undoStack.length > 0 || (this.activeTransaction !== null && this.activeTransaction.length > 0);
+    return this.undoStack.length > 0;
   }
 
   public canRedo(): boolean {
@@ -288,13 +279,6 @@ export class CanvasStore {
   }
 
   public undo() {
-    // If a transaction was in-flight, finish and commit it first
-    if (this.activeTransaction && this.activeTransaction.length > 0) {
-      this.undoStack.push(this.activeTransaction);
-      this.activeTransaction = null;
-      this.redoStack = [];
-    }
-
     const step = this.undoStack.pop();
     if (!step || step.length === 0) return;
 

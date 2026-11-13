@@ -58,35 +58,3 @@ class ICanvasRepository(ABC):
     @abstractmethod
     async def get_latest_snapshot(self, room_id: str) -> Optional[Dict[str, Any]]:
         pass
-
-    @abstractmethod
-    async def save_notebook_version(
-        self,
-        version_id: str,
-        owner_key: str,
-        owner_username: str,
-        owner_ip: str,
-        room_id: str,
-        version_name: str,
-        sequence_number: int,
-        elements_count: int,
-        pages_count: int,
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        pass
-
-    @abstractmethod
-    async def get_saved_versions_for_owner(self, owner_key: str) -> List[Dict[str, Any]]:
-        pass
-
-    @abstractmethod
-    async def get_saved_version_by_id(self, version_id: str) -> Optional[Dict[str, Any]]:
-        pass
-
-    @abstractmethod
-    async def delete_saved_version(self, version_id: str, owner_key: Optional[str] = None) -> bool:
-        pass
-
-    @abstractmethod
-    async def count_saved_versions_for_owner(self, owner_key: str) -> int:
-        pass

@@ -673,8 +673,88 @@ export const WhiteboardRoomPage: React.FC<WhiteboardRoomPageProps> = ({
               <Users size={12} />
               <span>Editor</span>
             </span>
+<<<<<<< HEAD
           )}
 
+=======
+          ) : null}
+
+          <nav
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: 'rgba(30, 41, 59, 0.85)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              padding: 3,
+              borderRadius: 10,
+              gap: 4,
+            }}
+          >
+            <button
+              onClick={() => setActiveTab('whiteboard')}
+              className="cb-tab-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                border: 'none',
+                background: activeTab === 'whiteboard' ? '#3b82f6' : 'transparent',
+                color: activeTab === 'whiteboard' ? '#ffffff' : '#94a3b8',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <PenTool size={14} />
+              <span>Whiteboard</span>
+              <span className="cb-desktop-only">&nbsp;&amp; Notebook</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('meeting')}
+              className="cb-tab-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 7,
+                padding: '6px 14px',
+                borderRadius: 8,
+                border: 'none',
+                background: activeTab === 'meeting' ? '#3b82f6' : 'transparent',
+                color: activeTab === 'meeting' ? '#ffffff' : '#94a3b8',
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <Users size={14} />
+              <span>Meeting</span>
+              <span className="cb-desktop-only">&nbsp;&amp; Controls</span>
+              {participantCount > 0 && (
+                <span
+                  style={{
+                    background: activeTab === 'meeting' ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)',
+                    color: '#ffffff',
+                    padding: '1px 6px',
+                    borderRadius: 10,
+                    fontSize: 11,
+                    fontWeight: 700,
+                  }}
+                >
+                  {participantCount}
+                </span>
+              )}
+            </button>
+          </nav>
+        </div>
+
+        {/* Right Section: Quick Mic Mute, Share Pointer, Share Modal Trigger, User Profile Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
           {/* Host Pending Cursor Share Approvals */}
           {isHost && pendingCursorRequests.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

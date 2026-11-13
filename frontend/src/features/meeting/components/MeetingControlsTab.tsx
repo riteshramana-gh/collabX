@@ -6,6 +6,7 @@ import { WebRTCVoiceMesh } from '../../voice/rtc/WebRTCVoiceMesh';
 import { RoomParticipant } from '../../../types/protocol';
 import { copyToClipboard } from '../../../core/utils/clipboard';
 import {
+  Shield,
   Lock,
   Unlock,
   Download,
@@ -26,6 +27,7 @@ import {
   Radio,
   ArrowRight,
   MousePointer2,
+<<<<<<< HEAD
   FolderClock,
   Save,
   RefreshCw,
@@ -34,6 +36,8 @@ import {
   CheckCircle2,
   History,
   MessageSquare,
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
 } from 'lucide-react';
 
 interface MeetingControlsTabProps {
@@ -75,6 +79,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [, setTick] = useState(0);
 
+<<<<<<< HEAD
   // Version Control State
   const [savedVersions, setSavedVersions] = useState<Array<{
     id: string;
@@ -99,6 +104,8 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
   // Room Chat Moderation Policy State
   const [chatPolicy, setChatPolicy] = useState<string>('EVERYONE');
 
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
   // Format Share URL
   const host = serverAddress.startsWith('http') ? serverAddress : `http://${serverAddress}`;
   const shareUrl = `${host}/?room=${roomId}`;
@@ -193,6 +200,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       }
     });
 
+<<<<<<< HEAD
     // Version Control Network Listeners
     conn.send('NOTEBOOK_VERSION_LIST_REQ', {});
 
@@ -268,6 +276,8 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       }
     });
 
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
     return () => {
       clearInterval(interval);
       unsubRoster();
@@ -276,6 +286,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       unsubRoleChanged();
       unsubMuted();
       unsubExport();
+<<<<<<< HEAD
       unsubVersionList();
       unsubVersionSave();
       unsubVersionRestore();
@@ -283,43 +294,10 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
       unsubVersionDelete();
       unsubChatHist();
       unsubChatPolicy();
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
     };
   }, [conn, roomId, currentUserId, voiceMesh]);
-
-  const handleSaveVersion = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    const defaultName = `Notebook v${savedVersions.length + 1} (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
-    const nameToSave = newVersionName.trim() || defaultName;
-
-    if (versionCount >= maxVersions && !replaceVersionId) {
-      setVersionError(`Maximum limit of ${maxVersions} notebooks reached. Select a notebook to overwrite or delete one first.`);
-      return;
-    }
-
-    setIsSavingVersion(true);
-    setVersionError(null);
-    setVersionSuccessMsg(null);
-    conn.send('NOTEBOOK_VERSION_SAVE_REQ', {
-      version_name: nameToSave,
-      replace_version_id: replaceVersionId || undefined,
-    });
-  };
-
-  const handleRestoreVersion = (versionId: string, versionName: string) => {
-    if (confirm(`Restore whiteboard to "${versionName}"? Current unsaved board changes will be replaced for all participants.`)) {
-      setIsRestoringVersionId(versionId);
-      setVersionError(null);
-      conn.send('NOTEBOOK_VERSION_RESTORE_REQ', { version_id: versionId });
-    }
-  };
-
-  const handleDeleteVersion = (versionId: string, versionName: string) => {
-    if (confirm(`Permanently delete "${versionName}" from server storage? This cannot be undone.`)) {
-      setIsDeletingVersionId(versionId);
-      setVersionError(null);
-      conn.send('NOTEBOOK_VERSION_DELETE_REQ', { version_id: versionId });
-    }
-  };
 
   const handleRoleChange = (targetSessionId: string, newRole: string) => {
     conn.send('HOST_SET_USER_ROLE', {
@@ -1118,6 +1096,7 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
               </div>
             </div>
 
+<<<<<<< HEAD
             {/* Notebook Version Control & Snapshots Card */}
             <div
               style={{
@@ -1468,10 +1447,29 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
               {/* Host Quick Governance & Offline Export/Import */}
               <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.08)', paddingTop: 12 }}>
                 {isHost && (
+=======
+            {/* Room Governance Card (Host Only) */}
+            {isHost && (
+              <div
+                style={{
+                  background: 'rgba(30, 41, 59, 0.65)',
+                  backdropFilter: 'blur(16px)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: 16,
+                  padding: 16,
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 600, marginBottom: 12 }}>
+                  <Shield size={16} color="#f59e0b" />
+                  <span>Room Security & Snapshots</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
                   <button
                     onClick={onToggleBoardAccess}
                     style={{
-                      width: '100%',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
@@ -1483,7 +1481,6 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                       fontSize: 12,
                       fontWeight: 600,
                       cursor: 'pointer',
-                      marginBottom: 10,
                     }}
                   >
                     <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1492,30 +1489,28 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                     </span>
                     <span style={{ fontSize: 11, opacity: 0.8 }}>{isBoardLocked ? 'Enable' : 'Disable'}</span>
                   </button>
-                )}
 
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <button
-                    onClick={handleExportSnapshot}
-                    style={{
-                      flex: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 6,
-                      padding: '8px 10px',
-                      borderRadius: 8,
-                      background: 'rgba(255, 255, 255, 0.08)',
-                      color: '#cbd5e1',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
-                      fontSize: 12,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <Download size={14} /> Export JSON
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleExportSnapshot}
+                      style={{
+                        flex: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: '8px 10px',
+                        borderRadius: 8,
+                        background: 'rgba(255, 255, 255, 0.08)',
+                        color: '#cbd5e1',
+                        border: '1px solid rgba(255, 255, 255, 0.1)',
+                        fontSize: 12,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Download size={14} /> Export State
+                    </button>
 
-                  {isHost && (
                     <label
                       style={{
                         flex: 1,
@@ -1532,13 +1527,13 @@ export const MeetingControlsTab: React.FC<MeetingControlsTabProps> = ({
                         cursor: 'pointer',
                       }}
                     >
-                      <Upload size={14} /> Import JSON
+                      <Upload size={14} /> Restore
                       <input type="file" accept=".json" onChange={handleImportFile} style={{ display: 'none' }} />
                     </label>
-                  )}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </div>

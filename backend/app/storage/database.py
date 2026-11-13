@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_room_seq 
 ON chat_messages(room_id, server_seq);
+<<<<<<< HEAD
 
 CREATE TABLE IF NOT EXISTS saved_notebook_versions (
     id TEXT PRIMARY KEY,
@@ -108,6 +109,8 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_token
 ON user_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user 
 ON user_sessions(username);
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
 """
 
 

@@ -3,7 +3,6 @@
 import json
 import logging
 import time
-import uuid
 from typing import List
 from app.modules.base import FeatureModule
 from app.core.context import ApplicationContext
@@ -39,10 +38,6 @@ class HostControlModule(FeatureModule):
         registry.register("HOST_SET_USER_ROLE", self.handle_set_user_role)
         registry.register("HOST_EXPORT_SNAPSHOT", self.handle_export_snapshot)
         registry.register("HOST_RESTORE_SNAPSHOT", self.handle_restore_snapshot)
-        registry.register("NOTEBOOK_VERSION_SAVE_REQ", self.handle_save_version)
-        registry.register("NOTEBOOK_VERSION_LIST_REQ", self.handle_list_versions)
-        registry.register("NOTEBOOK_VERSION_RESTORE_REQ", self.handle_restore_version)
-        registry.register("NOTEBOOK_VERSION_DELETE_REQ", self.handle_delete_version)
 
     async def handle_mute_user(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Allows room host to mute a specific participant or mute all participants."""
@@ -245,7 +240,6 @@ class HostControlModule(FeatureModule):
             "exported_at": int(time.time() * 1000),
             "sequence_number": room_actor.current_seq,
             "elements": canvas_snapshot.get("elements", {}),
-            "pages": canvas_snapshot.get("pages", {}),
         }
 
         await session.send_envelope(
@@ -258,6 +252,7 @@ class HostControlModule(FeatureModule):
             )
         )
 
+<<<<<<< HEAD
     def _get_owner_info(self, session: ClientSession) -> tuple:
         username = getattr(session, "authenticated_username", None) or (session.display_name or "").strip() or "Anonymous"
         ip = getattr(session, "client_ip", None) or "127.0.0.1"
@@ -491,6 +486,8 @@ class HostControlModule(FeatureModule):
             )
         )
 
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
     async def handle_restore_snapshot(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Restores canvas state from an imported snapshot bundle."""
         room_id = envelope.room_id

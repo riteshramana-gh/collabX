@@ -473,13 +473,6 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    const canvas = canvasRef.current;
-    if (canvas) {
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch (_) {}
-    }
-
     if (isPanningRef.current) {
       isPanningRef.current = false;
       return;
@@ -539,71 +532,7 @@ export const CanvasView: React.FC<CanvasViewProps> = ({ store, isReadOnly = fals
       };
       activeTool.onPointerUp(toolCtx, worldPoint, e.nativeEvent);
     }
-    store.endTransaction();
   };
-
-  // Global window pointerup & pointercancel listener to ensure strokes and transactions always complete
-  useEffect(() => {
-    const onWindowPointerUp = (e: PointerEvent) => {
-      if (isPointerDownRef.current) {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          try {
-            canvas.releasePointerCapture(e.pointerId);
-          } catch (_) {}
-        }
-        isPointerDownRef.current = false;
-        isPanningRef.current = false;
-
-        const worldPoint = screenToWorld(e.clientX, e.clientY);
-        const activeTool = ToolRegistry.get(store.activeToolId);
-        if (activeTool) {
-          const toolCtx: CanvasToolContext = {
-            elements: store.getElementsMap(),
-            activePageId: store.activePageId,
-            activeStrokeColor: store.strokeColor,
-            activeFillColor: store.fillColor === 'transparent' ? undefined : store.fillColor,
-            activeStrokeWidth: store.strokeWidth,
-            activeFontSize: store.fontSize,
-            activePenStyle: store.penStyle,
-            activeFontFamily: store.fontFamily,
-            activeFontWeight: store.fontWeight,
-            activeFontStyle: store.fontStyle,
-            activeTextAlign: store.textAlign,
-            eraserMode: store.eraserMode,
-            eraseHighlighterOnly: store.eraseHighlighterOnly,
-            shapeRecognitionEnabled: store.shapeRecognitionEnabled,
-            selectedElementId: store.selectedElementId,
-            selectedElementIds: store.selectedElementIds,
-            currentUserId: store.currentUserId,
-            commitOperation: (op) => store.commitOperation(op),
-            beginTransaction: () => store.beginTransaction(),
-            endTransaction: () => store.endTransaction(),
-            setPreviewElement: (el) => store.setPreviewElement(el),
-            setSelectedElementId: (id) => store.setSelectedElementId(id),
-            setSelectedElementIds: (ids) => store.setSelectedElementIds(ids),
-            panX: store.panX,
-            panY: store.panY,
-            zoom: store.zoom,
-            setActiveToolId: (id) => {
-              store.activeToolId = id;
-              store.setSelectedElementId(null);
-            },
-            addLaserPoint: (x, y) => store.addLaserPoint(x, y),
-          };
-          activeTool.onPointerUp(toolCtx, worldPoint, e);
-        }
-        store.endTransaction();
-      }
-    };
-
-    window.addEventListener('pointerup', onWindowPointerUp);
-    window.addEventListener('pointercancel', onWindowPointerUp);
-    return () => {
-      window.removeEventListener('pointerup', onWindowPointerUp);
-      window.removeEventListener('pointercancel', onWindowPointerUp);
-    };
-  }, [store]);
 
   // Native non-passive wheel event listener for reliable smooth zoom
   useEffect(() => {

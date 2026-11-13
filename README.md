@@ -92,6 +92,7 @@ collabboard-x/
 - **Whole-Stroke Erasing:** Removes entire vector element upon intersection with eraser path.
 - **Partial-Stroke Erasing:** Segment-based vector polyline trimming that isolates points within the eraser radius and cleanly splits remaining points into independent sub-strokes with identical styling, completely eliminating phantom connector lines.
 - **Erase Highlighter Only:** Toggle to erase only highlighter strokes while leaving pencil handwriting, shapes, and notes intact.
+<<<<<<< HEAD
 - **Transactional Compound Undo/Redo Engine:** Continuous eraser swipes, partial splitting passes, and multi-selection deletions are grouped into atomic transaction blocks (`beginTransaction()` / `endTransaction()`). Pressing `Ctrl+Z` or clicking the prominent **Undo & Redo buttons** in the primary toolbar or header bar undoes operations seamlessly. Automatic window-level pointerup listeners guarantee transactions are never trapped in open states. All snapshots are deeply cloned to prevent state mutation.
 
 ### 2.1 Server-Side Notebook Version Control & Snapshot Restores (Host-Governed, 3-Notebook Quota)
@@ -101,6 +102,9 @@ collabboard-x/
 - **Instant Whiteboard Restoration:** Restore any saved version with a single click (`[ 🔄 Restore ]`). The server atomically replaces room state, updates SQLite, and broadcasts the restored snapshot and announcement to all connected clients in real time.
 - **Quota Management & Slot Recycling:** A visual 3-slot progress indicator (`X / 3 Slots Used`) alerts hosts when capacity is reached, offering a dropdown to overwrite existing versions or delete unused slots.
 - **Offline File Backups:** Secondary JSON Export/Import buttons allow saving and restoring state from local disk files.
+=======
+- **Transactional Compound Undo/Redo Engine:** Continuous eraser swipes, partial splitting passes, and multi-selection deletions are grouped into atomic transaction blocks (`beginTransaction()` / `endTransaction()`). Pressing `Ctrl+Z` undoes the **entire stroke** in a single tap instead of stepping through dozens of coordinate slices. All snapshots are deeply cloned to prevent state mutation.
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
 
 ### 3. Geometric Shapes & Smart Shape Detection
 - **Built-in Geometric Primitives:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Triangle, and Polygons.
@@ -365,12 +369,7 @@ The user interface is organized into a clean 52px top navigation header with ded
    - **Host Moderation & Muting:** Host can mute individual noisy participants, click **"Mute All"** to mute all microphones across the room, or kick disruptive participants.
    - **Air-Gapped WebRTC Voice Mesh:** LAN group audio controls (Join Voice, Mute, Deafen, Leave) with live Voice Activity Detection (VAD).
    - **Instant Share & QR Code Card:** Real-time graphical QR code rendered on canvas, instant LAN share link copy button, and room code copy button.
-   - **Notebook Version Control & Snapshots Card:**
-     - Quota tracker with visual 3-slot progress indicator (X / 3 Slots Used).
-     - One-click version save with custom naming and automatic conflict/overwrite detection.
-     - Saved versions list displaying item counts, pages count, and timestamps.
-     - Instant version restore directly to live whiteboard with room-wide snapshot synchronization.
-     - One-click version deletion and offline JSON export/import.
+   - **Room Governance & Snapshots:** Room lock toggle, state export to `.json`, and state restoration.
 
 3. **`💬 Docked Whiteboard Chat` (Side Panel Drawer):**
    - Click the header `[ 💬 Chat ]` toggle button at any time to slide out the docked chat panel.
@@ -432,7 +431,7 @@ Compiled binaries will be written to:
 
 ## Automated Test Suites
 
-Run the complete test suite (**25 automated unit and integration tests**):
+Run the complete test suite (**24 automated unit and integration tests**):
 ```powershell
 py -3.13 -m pytest -v backend/tests
 ```
@@ -450,7 +449,6 @@ Test coverage includes:
 - **`test_chat_presence.py`**: Real-time chat message persistence, history query, and ephemeral cursor broadcasting.
 - **`test_voice_signaling.py`**: WebRTC SDP Offer, Answer, and ICE candidate mesh routing.
 - **`test_host_controls.py`**: Room locking, user kicking, snapshot JSON export, and state restoration.
-- **	est_version_control.py**: Server-side notebook version control with 3-slot quota enforcement, conflict replacement, version listing, room-wide snapshot restoration, and version deletion.
 
 ---
 

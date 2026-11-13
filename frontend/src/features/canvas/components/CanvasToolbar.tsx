@@ -80,7 +80,6 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
   const selectedElement = selectedId ? store.getElements().get(selectedId) : null;
 
   const handleToolSelect = (toolId: string) => {
-    store.endTransaction();
     store.activeToolId = toolId;
     if (toolId !== 'select') {
       store.setSelectedElementId(null);
@@ -351,46 +350,6 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         <Type size={18} />
       </button>
 
-      <div style={separatorStyle} />
-
-      {/* UNDO & REDO (Positioned at front of toolbar for instant 1-click accessibility) */}
-      <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-        <button
-          title="Undo (Ctrl+Z)"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            store.undo();
-          }}
-          disabled={!store.canUndo()}
-          style={{
-            ...actionBtnStyle,
-            opacity: store.canUndo() ? 1 : 0.35,
-            cursor: store.canUndo() ? 'pointer' : 'not-allowed',
-          }}
-        >
-          <RotateCcw size={16} />
-        </button>
-        <button
-          title="Redo (Ctrl+Y)"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            store.redo();
-          }}
-          disabled={!store.canRedo()}
-          style={{
-            ...actionBtnStyle,
-            opacity: store.canRedo() ? 1 : 0.35,
-            cursor: store.canRedo() ? 'pointer' : 'not-allowed',
-          }}
-        >
-          <RotateCw size={16} />
-        </button>
-      </div>
-
-      <div style={separatorStyle} />
-
       {/* 8. LASER POINTER TOOL */}
       <button
         title="Laser Pointer (Presenter Trail)"
@@ -617,7 +576,35 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         ))}
       </div>
 
+      <div style={separatorStyle} />
 
+      {/* UNDO & REDO */}
+      <div style={{ display: 'flex', gap: 2 }}>
+        <button
+          title="Undo (Ctrl+Z)"
+          onClick={() => store.undo()}
+          disabled={!store.canUndo()}
+          style={{
+            ...actionBtnStyle,
+            opacity: store.canUndo() ? 1 : 0.35,
+            cursor: store.canUndo() ? 'pointer' : 'not-allowed',
+          }}
+        >
+          <RotateCcw size={16} />
+        </button>
+        <button
+          title="Redo (Ctrl+Y)"
+          onClick={() => store.redo()}
+          disabled={!store.canRedo()}
+          style={{
+            ...actionBtnStyle,
+            opacity: store.canRedo() ? 1 : 0.35,
+            cursor: store.canRedo() ? 'pointer' : 'not-allowed',
+          }}
+        >
+          <RotateCw size={16} />
+        </button>
+      </div>
 
       {/* QUICK SELECTION ACTIONS (Bring to front, Lock, Duplicate, Delete, Edit Sticky Note) */}
       {selectedId && (

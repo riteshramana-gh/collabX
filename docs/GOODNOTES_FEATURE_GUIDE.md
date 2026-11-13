@@ -235,8 +235,8 @@ Located at the top right of the room interface:
 
 | Category | Shortcut | Function |
 |---|---|---|
-| **History** | `Ctrl + Z` or Top Toolbar / Header Undo Button | Undo (Atomic multi-stroke / erase transaction) |
-| | `Ctrl + Y` / `Ctrl + Shift + Z` or Redo Button | Redo |
+| **History** | `Ctrl + Z` | Undo |
+| | `Ctrl + Y` or `Ctrl + Shift + Z` | Redo |
 | **Selection** | `Ctrl + D` | Duplicate selected element |
 | | `Delete` / `Backspace` | Delete selected element |
 | | `Ctrl + A` | Select all elements on page |
@@ -298,6 +298,7 @@ CollabBoard X includes first-class responsive styling tailored for smartphones (
 ### 18.4 Touch & Stylus Optimization
 - Native touch event prevention eliminates accidental page scrolling or elastic bounce when drawing with a finger or Apple Pencil / stylus.
 - Double-tap gesture support enables effortless in-place editing of sticky notes and text annotations on touchscreens.
+<<<<<<< HEAD
 
 ---
 
@@ -437,3 +438,5 @@ CollabBoard X integrates a full-fledged user authentication and room ownership m
 
 
 
+=======
+>>>>>>> parent of bdcdf02 (UNDO/REDO VERSION HISTORY ADDED)
