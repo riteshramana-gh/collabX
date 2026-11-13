@@ -8,6 +8,7 @@ from app.engine.event_bus import EventRegistry
 from app.engine.room_manager import RoomManager
 from app.storage.database import DatabaseManager
 from app.storage.repositories.canvas_repo import SQLiteCanvasRepository
+from app.storage.repositories.auth_repo import SQLiteAuthRepository
 from app.transport.envelope import MessageEnvelope
 from app.transport.session import ClientSession
 
@@ -33,9 +34,11 @@ class CanvasFeatureModule(FeatureModule):
         await db_manager.initialize()
         context.repositories["db_manager"] = db_manager
 
-        # 2. Create Canvas Repository
+        # 2. Create Canvas & Auth Repositories
         canvas_repo = SQLiteCanvasRepository(db_manager.connection)
         context.repositories["canvas_repo"] = canvas_repo
+        auth_repo = SQLiteAuthRepository(db_manager.connection)
+        context.repositories["auth_repo"] = auth_repo
 
         # 3. Create Room Manager
         room_manager = RoomManager(
@@ -53,31 +56,67 @@ class CanvasFeatureModule(FeatureModule):
         registry.register("ROOM_SNAPSHOT_REQ", self.handle_snapshot_req)
 
     async def handle_room_join(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Handles a participant joining a room."""
+        """Handles a participant joining a room with authentication & spectator roles."""
         room_id = envelope.room_id
         display_name = envelope.payload.get("display_name", "Anonymous")
         is_creator = envelope.payload.get("is_creator", False)
-        session.display_name = display_name
+        auth_token = envelope.payload.get("auth_token")
+
+        # 1. Resolve user authentication
+        auth_repo = self.context.repositories.get("auth_repo")
+        user = None
+        if auth_repo and auth_token:
+            user = await auth_repo.get_user_by_token(auth_token)
+
+        if user:
+            session.is_authenticated = True
+            session.authenticated_username = user["username"]
+            session.display_name = display_name if display_name and display_name != "Student" else user["display_name"]
+        else:
+            session.is_authenticated = False
+            session.authenticated_username = None
+            session.display_name = display_name or "Guest Spectator"
 
         room_actor = await self.context.room_manager.get_or_create_room(room_id)
         existing_sessions = await self.context.connection_manager.get_room_sessions(room_id)
         other_sessions = [s for s in existing_sessions if s.session_id != session.session_id]
 
-        # First participant or explicit room creator becomes HOST; subsequent users join as EDITOR (or VIEWER if board is locked)
-        if room_actor.host_session_id is None or is_creator or len(other_sessions) == 0:
-            session.role = "HOST"
-            room_actor.host_session_id = session.session_id
-            logger.info(f"Designated HOST for room {room_id}: {session.session_id} ({display_name})")
-        else:
-            if room_actor.is_board_locked:
-                session.role = "VIEWER"
+        # 2. Host Designation & Role Logic
+        if not room_actor.host_username:
+            if session.is_authenticated:
+                room_actor.host_username = session.authenticated_username
+                room_actor.host_session_id = session.session_id
+                session.role = "HOST"
+                canvas_repo = self.context.repositories.get("canvas_repo")
+                if canvas_repo:
+                    await canvas_repo.db.execute(
+                        "UPDATE rooms SET host_user_id = ? WHERE id = ?",
+                        (session.authenticated_username, room_id),
+                    )
+                    await canvas_repo.db.commit()
+                logger.info(f"Designated logged-in HOST for room {room_id}: @{session.authenticated_username} ({session.session_id})")
+            elif is_creator or len(other_sessions) == 0:
+                session.role = "HOST"
+                room_actor.host_session_id = session.session_id
+                logger.info(f"Designated creator HOST for room {room_id}: {session.session_id} ({session.display_name})")
             else:
-                session.role = "EDITOR"
-            logger.info(f"Participant joined room {room_id}: {session.session_id} ({display_name}) as {session.role}")
+                session.role = "VIEWER"
+                logger.info(f"Guest spectator joined room {room_id}: {session.session_id} ({session.display_name})")
+        else:
+            if session.is_authenticated and session.authenticated_username.lower() == room_actor.host_username.lower():
+                session.role = "HOST"
+                room_actor.host_session_id = session.session_id
+                logger.info(f"Host @{session.authenticated_username} joined room {room_id} as HOST ({session.session_id})")
+            elif session.is_authenticated:
+                session.role = "VIEWER" if room_actor.is_board_locked else "EDITOR"
+                logger.info(f"Logged-in user @{session.authenticated_username} joined room {room_id} as {session.role}")
+            else:
+                session.role = "VIEWER"
+                logger.info(f"Guest spectator {session.display_name} joined room {room_id} as VIEWER")
 
         await self.context.connection_manager.join_room(session.session_id, room_id)
 
-        # 1. Send Join Acknowledgement
+        # 3. Send Join Acknowledgement
         await session.send_envelope(
             MessageEnvelope(
                 room_id=room_id,
@@ -88,19 +127,22 @@ class CanvasFeatureModule(FeatureModule):
                 payload={
                     "session_id": session.session_id,
                     "room_id": room_id,
-                    "display_name": display_name,
+                    "display_name": session.display_name,
                     "role": session.role,
+                    "is_authenticated": session.is_authenticated,
+                    "authenticated_username": getattr(session, "authenticated_username", None),
+                    "host_username": room_actor.host_username,
                     "is_board_locked": room_actor.is_board_locked,
                     "host_session_id": room_actor.host_session_id,
                 },
             )
         )
 
-        # 2. Send authoritative snapshot
+        # 4. Send authoritative snapshot
         snapshot_envelope = await room_actor.get_initial_snapshot_envelope()
         await session.send_envelope(snapshot_envelope)
 
-        # 3. Broadcast participant joined to room
+        # 5. Broadcast participant joined to room
         await self.context.connection_manager.broadcast_to_room(
             room_id,
             MessageEnvelope(
@@ -110,8 +152,10 @@ class CanvasFeatureModule(FeatureModule):
                 server_seq=room_actor.current_seq,
                 payload={
                     "session_id": session.session_id,
-                    "display_name": display_name,
+                    "display_name": session.display_name,
                     "role": session.role,
+                    "is_authenticated": session.is_authenticated,
+                    "authenticated_username": getattr(session, "authenticated_username", None),
                 },
             ),
             exclude_session_id=session.session_id,

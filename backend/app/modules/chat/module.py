@@ -30,11 +30,37 @@ class ChatFeatureModule(FeatureModule):
             raise RuntimeError("DatabaseManager required before ChatFeatureModule initialization")
         self.chat_repo = SQLiteChatRepository(db_manager.connection)
         context.repositories["chat_repo"] = self.chat_repo
+        self.room_chat_policies: Dict[str, str] = {}
         logger.info("ChatFeatureModule initialized")
 
     def register_events(self, registry: EventRegistry) -> None:
         registry.register("CHAT_MSG_SEND", self.handle_chat_send)
         registry.register("CHAT_HISTORY_REQ", self.handle_chat_history)
+        registry.register("HOST_SET_CHAT_POLICY", self.handle_set_chat_policy)
+
+    async def handle_set_chat_policy(self, session: ClientSession, envelope: MessageEnvelope) -> None:
+        """Sets the active chat restriction level for the room (Host only)."""
+        room_id = envelope.room_id
+        if getattr(session, "role", "EDITOR") != "HOST":
+            logger.warning(f"User {session.session_id} attempted to change chat policy without HOST permissions")
+            return
+
+        policy = envelope.payload.get("policy") or envelope.payload.get("chat_policy", "EVERYONE")
+        if policy not in ("EVERYONE", "HOST_ONLY", "NO_DIRECT", "DISABLED"):
+            policy = "EVERYONE"
+
+        self.room_chat_policies[room_id] = policy
+        logger.info(f"Room {room_id} chat restriction updated to '{policy}' by {session.display_name}")
+
+        await self.context.connection_manager.broadcast_to_room(
+            room_id,
+            MessageEnvelope(
+                room_id=room_id,
+                sender_id="server",
+                type="ROOM_CHAT_POLICY_CHANGED",
+                payload={"chat_policy": policy, "updated_by": session.display_name or "Host"},
+            ),
+        )
 
     async def handle_chat_send(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         room_id = envelope.room_id
@@ -46,6 +72,59 @@ class ChatFeatureModule(FeatureModule):
         target_type = envelope.payload.get("target_type", "EVERYONE")
         target_session_id = envelope.payload.get("target_session_id")
         target_name = envelope.payload.get("target_name")
+
+        # Authoritative enforcement of host chat policy
+        chat_policy = self.room_chat_policies.get(room_id, "EVERYONE")
+        is_host = getattr(session, "role", "EDITOR") == "HOST"
+
+        # Spectators (VIEWER role without authentication) cannot send chat messages
+        is_spectator = getattr(session, "role", "EDITOR") == "VIEWER" and not getattr(session, "is_authenticated", False)
+        if is_spectator and not is_host:
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="CHAT_ERROR",
+                    client_seq=envelope.client_seq,
+                    payload={"error": "AUTH_REQUIRED", "message": "Only logged-in users can send chat messages. Spectators have read-only access."},
+                )
+            )
+            return
+
+        if not is_host:
+            if chat_policy == "DISABLED":
+                await session.send_envelope(
+                    MessageEnvelope(
+                        room_id=room_id,
+                        sender_id="server",
+                        type="CHAT_ERROR",
+                        client_seq=envelope.client_seq,
+                        payload={"error": "CHAT_DISABLED", "message": "Room chat is currently disabled by the Host."},
+                    )
+                )
+                return
+            if chat_policy == "HOST_ONLY" and target_type != "HOST_ONLY":
+                await session.send_envelope(
+                    MessageEnvelope(
+                        room_id=room_id,
+                        sender_id="server",
+                        type="CHAT_ERROR",
+                        client_seq=envelope.client_seq,
+                        payload={"error": "CHAT_HOST_ONLY", "message": "Host has restricted chat to Host-only messages."},
+                    )
+                )
+                return
+            if chat_policy == "NO_DIRECT" and target_type == "DIRECT":
+                await session.send_envelope(
+                    MessageEnvelope(
+                        room_id=room_id,
+                        sender_id="server",
+                        type="CHAT_ERROR",
+                        client_seq=envelope.client_seq,
+                        payload={"error": "CHAT_NO_DIRECT", "message": "Direct participant messages are disabled by the Host."},
+                    )
+                )
+                return
 
         # Ensure room exists and obtain current room sequence
         room_actor = await self.context.room_manager.get_or_create_room(room_id)
@@ -102,7 +181,10 @@ class ChatFeatureModule(FeatureModule):
                 sender_id="server",
                 type="CHAT_HISTORY_RES",
                 client_seq=envelope.client_seq,
-                payload={"messages": history},
+                payload={
+                    "messages": history,
+                    "chat_policy": self.room_chat_policies.get(room_id, "EVERYONE"),
+                },
             )
         )
 

@@ -13,7 +13,10 @@ import {
   Sparkles,
   User,
   Trash2,
+  Crown,
+  LogIn,
 } from 'lucide-react';
+import { AuthJoinModal, AuthUser } from '../features/auth/AuthJoinModal';
 
 interface DashboardPageProps {
   onJoinRoom: (roomId: string, displayName: string, serverAddress: string, isCreator?: boolean) => void;
@@ -41,6 +44,25 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onJoinRoom }) => {
   const [serverStatus, setServerStatus] = useState<any>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [latency, setLatency] = useState<number | null>(null);
+
+  // Authentication & Session State
+  const [authToken, setAuthToken] = useState<string | null>(() => localStorage.getItem('collabboard_auth_token'));
+  const [authUsername, setAuthUsername] = useState<string | null>(() => localStorage.getItem('collabboard_auth_username'));
+  const [showAuthModal, setShowAuthModal] = useState(false);
+
+  const handleLogout = () => {
+    localStorage.removeItem('collabboard_auth_token');
+    localStorage.removeItem('collabboard_auth_username');
+    setAuthToken(null);
+    setAuthUsername(null);
+  };
+
+  const handleAuthSuccess = (user: AuthUser) => {
+    setAuthToken(user.token);
+    setAuthUsername(user.username);
+    setDisplayName(user.display_name);
+    setShowAuthModal(false);
+  };
 
   const [recentRooms, setRecentRooms] = useState<RecentRoom[]>(() => {
     try {
@@ -113,6 +135,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onJoinRoom }) => {
 
   const handleCreateRoom = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!authToken) {
+      setShowAuthModal(true);
+      return;
+    }
     const newRoomId = 'board-' + Math.random().toString(36).substring(2, 8);
     const fullName = getFullDisplayName();
     saveRecentRoom(newRoomId);
@@ -189,6 +215,80 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onJoinRoom }) => {
           <p style={{ margin: 0, color: '#94a3b8', fontSize: 13, lineHeight: '1.4' }}>
             GoodNotes-Grade LAN Multi-User Collaborative Whiteboard
           </p>
+        </div>
+
+        {/* Account & Role Status Banner */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: authToken ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+            border: authToken ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: 14,
+            padding: '10px 14px',
+            marginBottom: 16,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {authToken ? (
+              <>
+                <Crown size={16} color="#38bdf8" />
+                <div style={{ fontSize: 13, color: '#f8fafc' }}>
+                  Logged in as <strong style={{ color: '#38bdf8' }}>@{authUsername}</strong>
+                  {displayName && displayName !== authUsername && ` (${displayName})`}
+                </div>
+              </>
+            ) : (
+              <>
+                <User size={16} color="#94a3b8" />
+                <div style={{ fontSize: 13, color: '#94a3b8' }}>
+                  <strong>Guest Spectator Mode</strong> (Sign in to host & edit)
+                </div>
+              </>
+            )}
+          </div>
+
+          {authToken ? (
+            <button
+              type="button"
+              onClick={handleLogout}
+              style={{
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                color: '#f87171',
+                borderRadius: 8,
+                padding: '5px 10px',
+                fontSize: 11,
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Log Out
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowAuthModal(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                background: '#38bdf8',
+                border: 'none',
+                color: '#0f172a',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(56, 189, 248, 0.3)',
+              }}
+            >
+              <LogIn size={13} />
+              <span>Log In / Register</span>
+            </button>
+          )}
         </div>
 
         {/* Central Server Connection Card */}
@@ -550,6 +650,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onJoinRoom }) => {
           )}
         </div>
       </div>
+
+      {showAuthModal && (
+        <AuthJoinModal
+          serverAddress={serverAddress}
+          isOpen={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          onAuthSuccess={handleAuthSuccess}
+          onSpectateGuest={(guestName) => {
+            setDisplayName(guestName);
+            setShowAuthModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };

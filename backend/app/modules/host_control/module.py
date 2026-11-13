@@ -29,6 +29,7 @@ class HostControlModule(FeatureModule):
     async def initialize(self, context: ApplicationContext) -> None:
         self.context = context
         self.locked_rooms = set()
+        self.banned_users: Dict[str, Set[str]] = {}
         logger.info("HostControlModule initialized")
 
     def register_events(self, registry: EventRegistry) -> None:
@@ -173,15 +174,29 @@ class HostControlModule(FeatureModule):
 
         target_session = await self.context.connection_manager.get_session(target_session_id)
         if target_session and target_session.room_id == room_id:
+            # Record banned identity to prevent immediate re-joining
+            if room_id not in self.banned_users:
+                self.banned_users[room_id] = set()
+            self.banned_users[room_id].add(target_session_id)
+            if target_session.display_name:
+                self.banned_users[room_id].add(target_session.display_name.strip().lower())
+            client_ip = getattr(target_session, "client_ip", None)
+            if client_ip:
+                self.banned_users[room_id].add(client_ip)
+
             # Send notification to kicked user
-            await target_session.send_envelope(
-                MessageEnvelope(
-                    room_id=room_id,
-                    sender_id="server",
-                    type="HOST_USER_KICKED",
-                    payload={"reason": reason},
+            try:
+                await target_session.send_envelope(
+                    MessageEnvelope(
+                        room_id=room_id,
+                        sender_id="server",
+                        type="HOST_USER_KICKED",
+                        payload={"reason": reason},
+                    )
                 )
-            )
+            except Exception:
+                pass
+
             # Remove from room and terminate connection
             await self.context.connection_manager.leave_room(target_session_id, room_id)
             await target_session.close(code=1008, reason=reason)
@@ -196,6 +211,20 @@ class HostControlModule(FeatureModule):
                     payload={"session_id": target_session_id, "reason": "KICKED"},
                 ),
             )
+
+    def is_user_banned(self, room_id: str, session: ClientSession) -> bool:
+        """Checks if a user is currently banned/kicked from the given room."""
+        banned = self.banned_users.get(room_id, set())
+        if not banned:
+            return False
+        if session.session_id in banned:
+            return True
+        if session.display_name and session.display_name.strip().lower() in banned:
+            return True
+        client_ip = getattr(session, "client_ip", None)
+        if client_ip and client_ip in banned:
+            return True
+        return False
 
     async def handle_export_snapshot(self, session: ClientSession, envelope: MessageEnvelope) -> None:
         """Exports the complete canvas state, metadata, and history into a downloadable JSON payload."""
@@ -230,22 +259,22 @@ class HostControlModule(FeatureModule):
         )
 
     def _get_owner_info(self, session: ClientSession) -> tuple:
-        username = (session.display_name or "").strip() or "Anonymous"
+        username = getattr(session, "authenticated_username", None) or (session.display_name or "").strip() or "Anonymous"
         ip = getattr(session, "client_ip", None) or "127.0.0.1"
         owner_key = username.lower()
         return owner_key, username, ip
 
     async def handle_save_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Saves current room state as a named notebook version with 3-notebook limit per user/ip."""
+        """Saves current room state as a named notebook version with 3-notebook limit per user/ip (Host-only)."""
         room_id = envelope.room_id
-        if getattr(session, "role", "EDITOR") == "VIEWER":
+        if getattr(session, "role", "EDITOR") != "HOST":
             await session.send_envelope(
                 MessageEnvelope(
                     room_id=room_id,
                     sender_id="server",
                     type="NOTEBOOK_VERSION_SAVE_RES",
                     client_seq=envelope.client_seq,
-                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Viewers cannot save notebook versions."},
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Only the room host can save whiteboard notebook versions."},
                 )
             )
             return
@@ -341,16 +370,16 @@ class HostControlModule(FeatureModule):
         )
 
     async def handle_restore_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Restores a saved notebook version to the active whiteboard room."""
+        """Restores a saved notebook version to the active whiteboard room (Host-only)."""
         room_id = envelope.room_id
-        if getattr(session, "role", "EDITOR") == "VIEWER":
+        if getattr(session, "role", "EDITOR") != "HOST":
             await session.send_envelope(
                 MessageEnvelope(
                     room_id=room_id,
                     sender_id="server",
                     type="NOTEBOOK_VERSION_RESTORE_RES",
                     client_seq=envelope.client_seq,
-                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Viewers cannot restore notebook versions."},
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Only the room host can restore notebook versions."},
                 )
             )
             return
@@ -421,8 +450,20 @@ class HostControlModule(FeatureModule):
         )
 
     async def handle_delete_version(self, session: ClientSession, envelope: MessageEnvelope) -> None:
-        """Deletes a saved notebook version."""
+        """Deletes a saved notebook version (Host-only)."""
         room_id = envelope.room_id
+        if getattr(session, "role", "EDITOR") != "HOST":
+            await session.send_envelope(
+                MessageEnvelope(
+                    room_id=room_id,
+                    sender_id="server",
+                    type="NOTEBOOK_VERSION_DELETE_RES",
+                    client_seq=envelope.client_seq,
+                    payload={"success": False, "error": "PERMISSION_DENIED", "message": "Only the room host can delete notebook versions."},
+                )
+            )
+            return
+
         version_id = envelope.payload.get("version_id")
         if not version_id:
             return
