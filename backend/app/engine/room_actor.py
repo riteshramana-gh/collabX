@@ -37,6 +37,7 @@ class RoomActor:
 
         # Room Host & Board Access Governance
         self.host_session_id: Optional[str] = None
+        self.host_username: Optional[str] = None
         self.is_board_locked: bool = False
 
         # In-memory deduplication sliding window
@@ -58,6 +59,7 @@ class RoomActor:
         # Initialize or restore room record and state from database
         room_record = await self.canvas_repo.get_or_create_room(self.room_id)
         self.current_seq = room_record.get("current_seq", 0)
+        self.host_username = room_record.get("host_user_id")
 
         snapshot = await self.canvas_repo.get_latest_snapshot(self.room_id)
         if snapshot:

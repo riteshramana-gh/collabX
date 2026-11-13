@@ -32,6 +32,7 @@ import {
   Check,
   ChevronDown,
   Edit2,
+  Home,
 } from 'lucide-react';
 
 interface CanvasToolbarProps {
@@ -57,10 +58,22 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
   const [, setTick] = useState(0);
   const [openMenu, setOpenMenu] = useState<'pen' | 'eraser' | 'shape' | 'text' | 'background' | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return store.subscribe(() => setTick((t) => t + 1));
   }, [store]);
+
+  // Outside click listener to dismiss any open dropdown menu cleanly
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent | PointerEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    window.addEventListener('pointerdown', handleOutsideClick);
+    return () => window.removeEventListener('pointerdown', handleOutsideClick);
+  }, []);
 
   const activeTool = store.activeToolId;
   const selectedId = store.selectedElementId;
@@ -93,6 +106,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
   return (
     <div
+      ref={toolbarRef}
       className="cb-canvas-toolbar"
       style={{
         position: 'absolute',
@@ -110,8 +124,7 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
         boxShadow: '0 12px 36px rgba(0, 0, 0, 0.45)',
         zIndex: 50,
         maxWidth: 'calc(100vw - 24px)',
-        overflowX: 'auto',
-        scrollbarWidth: 'none',
+        overflow: 'visible',
       }}
     >
       <input
@@ -133,20 +146,25 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
       {/* 2. PEN TOOL (with Ballpoint / Fountain / Brush popup) */}
       <div style={{ position: 'relative' }}>
-        <button
-          title={`Pen (${store.penStyle})`}
-          onClick={() => {
-            if (activeTool === 'pencil') {
+        <div style={splitBtnWrapperStyle(activeTool === 'pencil')}>
+          <button
+            title={`Pen (${store.penStyle})`}
+            onClick={() => handleToolSelect('pencil')}
+            style={splitMainBtnStyle(activeTool === 'pencil')}
+          >
+            <Pencil size={17} />
+          </button>
+          <button
+            title="Pen style options"
+            onClick={(e) => {
+              e.stopPropagation();
               setOpenMenu(openMenu === 'pen' ? null : 'pen');
-            } else {
-              handleToolSelect('pencil');
-            }
-          }}
-          style={getToolBtnStyle(activeTool === 'pencil')}
-        >
-          <Pencil size={18} />
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
-        </button>
+            }}
+            style={splitChevronBtnStyle(activeTool === 'pencil')}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </div>
 
         {openMenu === 'pen' && (
           <div style={popupMenuStyle}>
@@ -154,8 +172,10 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
             {(['ballpoint', 'fountain', 'brush'] as PenStyle[]).map((style) => (
               <button
                 key={style}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   store.penStyle = style;
+                  handleToolSelect('pencil');
                   setOpenMenu(null);
                   setTick((v) => v + 1);
                 }}
@@ -180,27 +200,34 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
       {/* 4. ERASER TOOL (with Whole / Partial / Highlighter-Only popup) */}
       <div style={{ position: 'relative' }}>
-        <button
-          title={`Eraser (${store.eraserMode})`}
-          onClick={() => {
-            if (activeTool === 'eraser') {
+        <div style={splitBtnWrapperStyle(activeTool === 'eraser')}>
+          <button
+            title={`Eraser (${store.eraserMode})`}
+            onClick={() => handleToolSelect('eraser')}
+            style={splitMainBtnStyle(activeTool === 'eraser')}
+          >
+            <Eraser size={17} />
+          </button>
+          <button
+            title="Eraser options"
+            onClick={(e) => {
+              e.stopPropagation();
               setOpenMenu(openMenu === 'eraser' ? null : 'eraser');
-            } else {
-              handleToolSelect('eraser');
-            }
-          }}
-          style={getToolBtnStyle(activeTool === 'eraser')}
-        >
-          <Eraser size={18} />
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
-        </button>
+            }}
+            style={splitChevronBtnStyle(activeTool === 'eraser')}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </div>
 
         {openMenu === 'eraser' && (
           <div style={popupMenuStyle}>
             <div style={menuHeaderStyle}>Eraser Mode</div>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 store.eraserMode = 'whole';
+                handleToolSelect('eraser');
                 setOpenMenu(null);
                 setTick((v) => v + 1);
               }}
@@ -210,8 +237,10 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
               {store.eraserMode === 'whole' && <Check size={14} color="#3b82f6" />}
             </button>
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 store.eraserMode = 'partial';
+                handleToolSelect('eraser');
                 setOpenMenu(null);
                 setTick((v) => v + 1);
               }}
@@ -222,7 +251,8 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
             </button>
             <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <button
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 store.eraseHighlighterOnly = !store.eraseHighlighterOnly;
                 setTick((v) => v + 1);
               }}
@@ -246,41 +276,66 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
 
       {/* 6. SHAPES MENU (Rect, Ellipse, Line, Arrow, Triangle) */}
       <div style={{ position: 'relative' }}>
-        <button
-          title="Geometric Shapes"
-          onClick={() => setOpenMenu(openMenu === 'shape' ? null : 'shape')}
-          style={getToolBtnStyle(['rectangle', 'ellipse', 'line', 'arrow', 'triangle'].includes(activeTool))}
-        >
-          {activeTool === 'circle' || activeTool === 'ellipse' ? (
-            <Circle size={18} />
-          ) : activeTool === 'line' ? (
-            <Minus size={18} />
-          ) : activeTool === 'arrow' ? (
-            <ArrowUpRight size={18} />
-          ) : activeTool === 'triangle' ? (
-            <Triangle size={18} />
-          ) : (
-            <Square size={18} />
+        <div
+          style={splitBtnWrapperStyle(
+            ['rectangle', 'ellipse', 'circle', 'line', 'arrow', 'triangle'].includes(activeTool)
           )}
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
-        </button>
+        >
+          <button
+            title="Geometric Shapes"
+            onClick={() => {
+              if (['rectangle', 'ellipse', 'circle', 'line', 'arrow', 'triangle'].includes(activeTool)) {
+                setOpenMenu(openMenu === 'shape' ? null : 'shape');
+              } else {
+                handleToolSelect('rectangle');
+              }
+            }}
+            style={splitMainBtnStyle(
+              ['rectangle', 'ellipse', 'circle', 'line', 'arrow', 'triangle'].includes(activeTool)
+            )}
+          >
+            {activeTool === 'circle' || activeTool === 'ellipse' ? (
+              <Circle size={17} />
+            ) : activeTool === 'line' ? (
+              <Minus size={17} />
+            ) : activeTool === 'arrow' ? (
+              <ArrowUpRight size={17} />
+            ) : activeTool === 'triangle' ? (
+              <Triangle size={17} />
+            ) : (
+              <Square size={17} />
+            )}
+          </button>
+          <button
+            title="Select shape type"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenMenu(openMenu === 'shape' ? null : 'shape');
+            }}
+            style={splitChevronBtnStyle(
+              ['rectangle', 'ellipse', 'circle', 'line', 'arrow', 'triangle'].includes(activeTool)
+            )}
+          >
+            <ChevronDown size={11} />
+          </button>
+        </div>
 
         {openMenu === 'shape' && (
           <div style={popupMenuStyle}>
             <div style={menuHeaderStyle}>Geometric Shapes</div>
-            <button onClick={() => handleToolSelect('rectangle')} style={menuItemStyle(activeTool === 'rectangle')}>
+            <button onClick={(e) => { e.stopPropagation(); handleToolSelect('rectangle'); }} style={menuItemStyle(activeTool === 'rectangle')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Square size={16} /> Rectangle</div>
             </button>
-            <button onClick={() => handleToolSelect('ellipse')} style={menuItemStyle(activeTool === 'ellipse')}>
+            <button onClick={(e) => { e.stopPropagation(); handleToolSelect('ellipse'); }} style={menuItemStyle(activeTool === 'ellipse')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Circle size={16} /> Ellipse / Circle</div>
             </button>
-            <button onClick={() => handleToolSelect('line')} style={menuItemStyle(activeTool === 'line')}>
+            <button onClick={(e) => { e.stopPropagation(); handleToolSelect('line'); }} style={menuItemStyle(activeTool === 'line')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Minus size={16} /> Straight Line</div>
             </button>
-            <button onClick={() => handleToolSelect('arrow')} style={menuItemStyle(activeTool === 'arrow')}>
+            <button onClick={(e) => { e.stopPropagation(); handleToolSelect('arrow'); }} style={menuItemStyle(activeTool === 'arrow')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ArrowUpRight size={16} /> Directional Arrow</div>
             </button>
-            <button onClick={() => handleToolSelect('triangle')} style={menuItemStyle(activeTool === 'triangle')}>
+            <button onClick={(e) => { e.stopPropagation(); handleToolSelect('triangle'); }} style={menuItemStyle(activeTool === 'triangle')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Triangle size={16} /> Triangle</div>
             </button>
           </div>
@@ -396,23 +451,32 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
       <div style={{ position: 'relative' }}>
         <button
           title="Paper Background & Template"
-          onClick={() => setOpenMenu(openMenu === 'background' ? null : 'background')}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenMenu(openMenu === 'background' ? null : 'background');
+          }}
           style={{
             ...actionBtnStyle,
-            color: openMenu === 'background' ? '#3b82f6' : '#94a3b8',
-            background: openMenu === 'background' ? 'rgba(59, 130, 246, 0.2)' : 'transparent',
-            padding: '0 6px',
+            color: openMenu === 'background' ? '#38bdf8' : '#cbd5e1',
+            background: openMenu === 'background' ? 'rgba(56, 189, 248, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+            border: openMenu === 'background' ? '1px solid rgba(56, 189, 248, 0.4)' : '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: 8,
+            padding: '0 8px',
             width: 'auto',
-            gap: 4,
+            height: 32,
+            gap: 5,
           }}
         >
           <Palette size={16} />
-          <span style={{ fontSize: 10, fontWeight: 600 }}>Paper</span>
-          <ChevronDown size={10} style={{ marginLeft: -2 }} />
+          <span style={{ fontSize: 11, fontWeight: 600 }}>Paper</span>
+          <ChevronDown size={11} style={{ marginLeft: -1 }} />
         </button>
 
         {openMenu === 'background' && (
-          <div style={{ ...popupMenuStyle, minWidth: 200, padding: '8px 10px' }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ ...popupMenuStyle, minWidth: 210, padding: '10px 12px' }}
+          >
             <div style={menuHeaderStyle}>Paper Color</div>
             <div style={{ display: 'flex', gap: 6, margin: '6px 0 10px 0' }}>
               {[
@@ -681,6 +745,16 @@ export const CanvasToolbar: React.FC<CanvasToolbarProps> = ({ store, onToggleSti
             <ZoomIn size={16} />
           </button>
           <button
+            title="Return to Home (100% Zoom, Origin)"
+            onClick={() => {
+              store.setPan(0, 0);
+              store.setZoom(1.0);
+            }}
+            style={{ ...actionBtnStyle, color: '#38bdf8' }}
+          >
+            <Home size={15} />
+          </button>
+          <button
             title="Reset View"
             onClick={() => {
               store.setPan(0, 0);
@@ -711,6 +785,43 @@ const getToolBtnStyle = (active: boolean): React.CSSProperties => ({
   padding: 0,
 });
 
+const splitBtnWrapperStyle = (active: boolean): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  background: active ? '#3b82f6' : 'rgba(255, 255, 255, 0.05)',
+  border: active ? '1px solid #60a5fa' : '1px solid rgba(255, 255, 255, 0.1)',
+  borderRadius: 8,
+  overflow: 'hidden',
+  transition: 'all 0.15s ease',
+});
+
+const splitMainBtnStyle = (active: boolean): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 28,
+  height: 32,
+  border: 'none',
+  background: 'transparent',
+  color: active ? '#ffffff' : '#cbd5e1',
+  cursor: 'pointer',
+  padding: 0,
+});
+
+const splitChevronBtnStyle = (active: boolean): React.CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: 14,
+  height: 32,
+  border: 'none',
+  borderLeft: active ? '1px solid rgba(255, 255, 255, 0.25)' : '1px solid rgba(255, 255, 255, 0.1)',
+  background: 'transparent',
+  color: active ? '#ffffff' : '#94a3b8',
+  cursor: 'pointer',
+  padding: 0,
+});
+
 const actionBtnStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -734,16 +845,16 @@ const separatorStyle: React.CSSProperties = {
 
 const popupMenuStyle: React.CSSProperties = {
   position: 'absolute',
-  top: '110%',
+  top: 'calc(100% + 8px)',
   left: 0,
-  minWidth: 160,
-  background: 'rgba(15, 23, 42, 0.96)',
-  backdropFilter: 'blur(16px)',
-  border: '1px solid rgba(255, 255, 255, 0.15)',
+  minWidth: 165,
+  background: 'rgba(15, 23, 42, 0.98)',
+  backdropFilter: 'blur(20px)',
+  border: '1px solid rgba(255, 255, 255, 0.2)',
   borderRadius: 10,
   padding: '6px 0',
-  boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-  zIndex: 60,
+  boxShadow: '0 12px 32px rgba(0,0,0,0.6)',
+  zIndex: 100,
 };
 
 const menuHeaderStyle: React.CSSProperties = {

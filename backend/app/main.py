@@ -9,6 +9,7 @@ from app.core.logging import setup_logging
 from app.core.context import get_app_context
 from app.core.lifecycle import LifecycleManager
 from app.transport.websocket_gateway import router as websocket_router
+from app.transport.auth_router import router as auth_router
 from app.transport.envelope import MessageEnvelope
 from app.transport.session import ClientSession
 
@@ -68,6 +69,7 @@ from fastapi.staticfiles import StaticFiles
 
 # Mount transports
 app.include_router(websocket_router)
+app.include_router(auth_router)
 
 
 @app.get("/api/health")

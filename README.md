@@ -35,7 +35,7 @@ collabboard-x/
 |   |   |-- storage/         # SQLite WAL database, repositories, snapshot manager
 |   |   |-- launcher/        # LAN IP detector, terminal ASCII QR generator, host CLI
 |   |   |-- main.py          # FastAPI application & static asset server
-|   |-- tests/               # 24 automated unit and integration tests
+|   |-- tests/               # 27 automated unit and integration tests
 |-- frontend/
 |   |-- src/
 |   |   |-- core/network/    # ConnectionManager, EnvelopeCodec
@@ -94,20 +94,22 @@ collabboard-x/
 - **Erase Highlighter Only:** Toggle to erase only highlighter strokes while leaving pencil handwriting, shapes, and notes intact.
 - **Transactional Compound Undo/Redo Engine:** Continuous eraser swipes, partial splitting passes, and multi-selection deletions are grouped into atomic transaction blocks (`beginTransaction()` / `endTransaction()`). Pressing `Ctrl+Z` or clicking the prominent **Undo & Redo buttons** in the primary toolbar or header bar undoes operations seamlessly. Automatic window-level pointerup listeners guarantee transactions are never trapped in open states. All snapshots are deeply cloned to prevent state mutation.
 
-### 2.1 Server-Side Notebook Version Control & Snapshot Restores (3-Notebook Quota)
-- **Persistent Server Slots:** Each participant/host is allocated **3 dedicated notebook version slots** saved directly in the server's SQLite WAL database.
-- **Named Version Snapshots:** Users can snapshot their active whiteboard with custom or timestamped version names (e.g. `Physics Lecture Part 1`). Every snapshot encapsulates all canvas elements, multi-page hierarchies, paper templates, and background colors.
+### 2.1 Server-Side Notebook Version Control & Snapshot Restores (Host-Governed, 3-Notebook Quota)
+- **Host-Governed Saving & Restoring:** Only the **Room Host** (`👑 Host`) has authority to snapshot, overwrite, restore, or delete notebook versions on the server. Non-host participants and spectators can view the saved versions list but cannot mutate server storage.
+- **Persistent Server Slots:** Each host is allocated **3 dedicated notebook version slots** saved directly in the server's SQLite WAL database.
+- **Named Version Snapshots:** Hosts can snapshot active whiteboards with custom or timestamped version names (e.g. `Physics Lecture Part 1`). Every snapshot encapsulates all canvas elements, multi-page hierarchies, paper templates, and background colors.
 - **Instant Whiteboard Restoration:** Restore any saved version with a single click (`[ 🔄 Restore ]`). The server atomically replaces room state, updates SQLite, and broadcasts the restored snapshot and announcement to all connected clients in real time.
-- **Quota Management & Slot Recycling:** A visual 3-slot progress indicator (`X / 3 Slots Used`) alerts users when capacity is reached, offering a dropdown to overwrite existing versions or delete unused slots.
+- **Quota Management & Slot Recycling:** A visual 3-slot progress indicator (`X / 3 Slots Used`) alerts hosts when capacity is reached, offering a dropdown to overwrite existing versions or delete unused slots.
 - **Offline File Backups:** Secondary JSON Export/Import buttons allow saving and restoring state from local disk files.
 
-### 3. Geometric Shapes & Smart Shape Detection Toggle
-- **Built-in Geometric Primitives:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Double-Arrow, Triangle, Star, and Polygons.
-- **Smart Shape Detection:** Inactive by default. Toggleable on demand via the toolbar button (`[ ✨ Shapes: ON/OFF ]`). Analyzes freehand strokes using the Ramer-Douglas-Peucker polygon approximation and least-squares regression to snap strokes into crisp geometric forms.
+### 3. Geometric Shapes & Smart Shape Detection
+- **Built-in Geometric Primitives:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Triangle, and Polygons.
+- **Smart Shape Detection:** Inactive by default. Toggleable on demand via the toolbar button (`[ ✨ Shapes: ON/OFF ]`). Features Shoelace formula polygon area ratio analysis, centroid radial variance circularity checks ($\sigma_r / \bar{r} < 0.28$), triangle area ratio classification, and robust bounded directional arrow shaft detection.
 
-### 4. Lasso Selection with Instant Move Handoff
+### 4. Lasso Selection with Instant Move Handoff & Interactive Corner Resizing
 - **Freeform Lasso:** Ray-casting polygon containment selection for handwriting, shapes, text, images, and stickers.
 - **Instant Move Tool Switch:** Automatically switches to the Select / Move tool immediately upon releasing the lasso, allowing instant drag, transform, and rotation without an extra click.
+- **Corner Handle Resizing:** Selected images, sticky notes, and sized elements feature 4 corner drag handles (`nw`, `ne`, `se`, `sw`) with dynamic directional cursors (`nwse-resize` and `nesw-resize`) for fluid real-time scaling.
 - **Transformations:** Move, resize, duplicate (`Ctrl+D`), bring to front, send to back, and **object locking** to prevent accidental modifications.
 
 ### 5. Multi-Page Notebook, Paper Templates & Color Palettes
@@ -124,29 +126,45 @@ collabboard-x/
 - **Cursor-Centered Wheel Zoom:** Exponential smooth zoom centered exactly at mouse pointer position with native scroll blocking.
 - **Touchpad & Pinch Gestures:** Smooth two-finger pan and pinch-to-zoom (`ctrlKey`).
 - **Floating Zoom Widget:** Bottom-left floating controls featuring `[ - ]`, `[ 100% ]` reset, `[ + ]`, and `[ ⛶ Fit to Page ]` centering.
+- **Return to Home (`[ 🏠 Home ]`):** Dedicated button in the zoom widget and canvas toolbar, plus `Home` keyboard shortcut, instantly resets pan to `(0,0)` and zoom to `100%`.
+- **Universal LAN Clipboard Copy:** Robust utility automatically falling back from `navigator.clipboard` to detached `<textarea>` + `document.execCommand('copy')`, ensuring room links copy seamlessly even over non-HTTPS LAN connections (`http://192.168.x.x:8000`).
 - **Laser Pointer:** Glowing red/cyan tip with an ephemeral fading particle trail synchronized across peers.
 - **Decluttered Canvas:** Removed drafting ruler to maintain a focused, modern digital notebook experience.
 
 ### 8. Categorized Elements & Editable Sticky Notes
-- Intuitive, tabbed sticker drawer with 1-click center placement:
+- Intuitive, streamlined sticker drawer with 1-click center placement:
   - **Sticky Notes:** Pastel yellow, blue, green, pink, purple, and orange with multi-line text input and adhesive strip styling.
   - **In-Place Note Editing:** Double-click or double-tap any sticky note or text element on canvas to launch the inline editing overlay.
+  - **Interactive Text Box:** Clicking the canvas with the Text Tool directly creates an in-place text box with auto-focus (completely eliminating browser `window.prompt()` popups).
   - **Floating Canvas Badge:** Selected sticky notes display a floating `[ ✏️ Edit Note Text ]` badge directly on canvas.
+
+### 8.1 User Authentication, Room Ownership & Guest Spectator Flow
+- **User Accounts & PBKDF2 Encryption:** Secure registration and login using username and password (implicit server connection).
+- **Username Conflict Enforcement:** Server rejects duplicate usernames with HTTP 409 `USERNAME_TAKEN` and prompts the user to select another name.
+- **Host Designation by Username:** The registered user who creates a room is permanently stored as the room's host (`👑 Host`).
+- **Spectator Mode via Link:** Visiting a room link without login prompts the user to either Log In, Register, or enter as a read-only **Guest Spectator** (`👀 Spectator`).
+- **Role Permissions:**
+  - Spectators can view live notes, pan/zoom, see pointers, and listen to voice, but cannot draw or chat.
+  - Logged-in users are Editors (`✏️ Editor`) with full drawing and chat privileges.
+  - Room Host (`👑 Host`) has master control over board access, user moderation, and server version history.
   - **Toolbar Action & Pastel Swatches:** Active sticky notes provide an **`[ ✏️ Edit Text ]`** button and 6 pastel color pickers (Canary Lemon `#fef08a`, Mint `#bbf7d0`, Sky `#bae6fd`, Bubblegum `#fbcfe8`, Lavender `#e9d5ff`, Peach `#fed7aa`).
   - **Word Wrapping & Empty State Guidance:** Multi-line text wraps with automatic padding, and empty notes display an italic placeholder `(Double-click to write note...)`.
   - **Reactions & Emojis:** Quick emoji grid (👍, ❤️, 🚀, 🔥, 💡, 🎯, 👏, 🎉, 💯, ⚠️, ❓, 🏆, etc.).
-  - **Rubber Stamps & Badges:** Official circular and rectangular stamps (APPROVED, CONFIDENTIAL, REVIEWED, DRAFT, URGENT).
-  - **Flowcharts & Diagrams:** Start/End terminal, Process step, Decision fork, Database cylinder, Cloud service.
   - **Math & Science:** $\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$, Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA helix, Resistor.
 - **Auto-Select & Move:** Elements automatically select and switch to the Move tool upon insertion for immediate drag repositioning.
 
-### 9. Docked Whiteboard Chat with Granular Audience Scope
+### 9. Docked Whiteboard Chat with Granular Audience Scope & Host Policy Governance
 - **Side Panel Integration:** Docked directly onto the whiteboard (`ChatSidePanel`) instead of a separate tab, keeping your drawings continuously in view while chatting.
 - **Audience Targeting:**
   - `👥 Everyone (Public)`: Broadcasts messages to all participants in the room.
   - `👑 Room Host (Private)`: Sends private messages directly to room hosts only.
   - `🔒 Particular Participant (Direct)`: Encrypted 1-on-1 private messaging routed exclusively to the selected participant and the sender.
+- **Host Chat Restriction Policies:** The room host can enforce room communication rules directly (`EVERYONE`, `HOST_ONLY`, `NO_DIRECT`, or `DISABLED`), authoritatively enforced by the server backend.
 - **Color-Coded Badges:** Clear visual indicators for Host-Only and Direct messages with unread counter badges on the header chat toggle button.
+
+### 9.1 Permanent User Ejection & Ban Management
+- Hosts can permanently remove disruptive users via `HOST_KICK_USER`.
+- Closes client WebSocket with code `1008` (`POLICY_VIOLATION`), prevents automatic reconnection, and stores ban records across session ID, display name, and IP address.
 
 ### 10. Note-Synchronized Audio Recording
 - Record lectures or group discussions using the browser's Web Audio MediaRecorder.
@@ -370,13 +388,45 @@ The user interface is organized into a clean 52px top navigation header with ded
   - **Host Real-time Moderation:** The Host receives an interactive header notification pill (`"User wants to show cursor: [Allow] [Deny]"`).
   - **Granular Toggles:** The Host can also toggle pointer visibility (`[ 🖱️ Pointer: On / Off ]`) for any participant at any time within the **Meeting & Controls** tab.
 
-### 5. Quick Header Controls
-- **Master Board Access Switch:** Prominent toggle button in the top header (`[ 🔓 Board: Open ]` / `[ 🔒 Board: Disabled ]`) allowing the Host to freeze/unfreeze drawing access instantly from any screen.
-- **Participant Pointer Request Button:** Non-host participants can request or stop cursor sharing (`[Share Pointer]`).
-- **Host Cursor Request Notification:** Interactive pill allowing the Host to accept or reject incoming cursor broadcast requests on the fly.
-- **Quick Voice Mic Toggle:** Mute/unmute microphone directly from the top header without leaving the Whiteboard tab.
-- **Quick Share & QR Modal:** One-click modal popup displaying the shareable LAN link and QR code from any screen.
-- **User Profile & Role Pill:** Real-time badge indicating current role (`👑 HOST`, `✏️ EDITOR`, or `👁️ VIEWER`).
+### 5. Decluttered 3-Segment Workstation Header Bar (52px)
+- **Left:** Return to dashboard, CollabBoard X brand, one-click copyable Room ID pill (`# room_id` with `"Copied!"` indicator), and pulsing connection status dot.
+- **Center:** Balanced segmented workstation tab switcher (`🎨 Whiteboard` vs `👥 Meeting (${count})`).
+- **Right:** Host Master Board Access toggle, Participant Pointer request toggle, Voice Mic control, Share & QR modal button, Chat Drawer button with unread count badge, and User Avatar with role pill.
+- **Removed Duplicate Controls:** Removed redundant Undo & Redo buttons from the top bar (fully consolidated in the canvas toolbar).
+
+---
+
+## Standalone Windows Executables (.exe) & Local Compilation
+
+CollabBoard X distributes self-contained single-file `.exe` binaries with zero Python or Node.js runtime installation required on client or server machines.
+
+### 1. Precompiled Release Binaries
+The following binaries are located in `dist/`:
+- **`dist/CollabBoardX-Server.exe`**: Central Dedicated Server binary. Embeds FastAPI, SQLite WAL engine, raw TCP socket engine (port 9001), and bundled production web assets.
+- **`dist/CollabBoardX-Client.exe`**: Standalone Desktop GUI Client powered by native WebView2. Connects to the central dedicated server or hosts an ad-hoc local room.
+
+### 2. How to Compile / Reproduce Binaries Locally
+To rebuild both binaries from source:
+```powershell
+# 1. Build frontend production assets
+npm --prefix frontend run build
+
+# 2. Package both Server and Client executables using PyInstaller
+py -3.13 package_executable.py all
+```
+
+Or package individually:
+```powershell
+# Build Central Server executable only
+py -3.13 package_executable.py server
+
+# Build Desktop GUI Client executable only
+py -3.13 package_executable.py client
+```
+
+Compiled binaries will be written to:
+- `dist/CollabBoardX-Server.exe`
+- `dist/CollabBoardX-Client.exe`
 
 ---
 

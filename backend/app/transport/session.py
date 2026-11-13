@@ -32,6 +32,7 @@ class ClientSession(ABC):
         self.display_name: Optional[str] = None
         self.role: str = "PARTICIPANT"  # "HOST" or "PARTICIPANT"
         self.is_authenticated: bool = False
+        self.authenticated_username: Optional[str] = None
         self.connected_at: float = time.time()
         self.last_heartbeat_at: float = time.time()
         self.is_active: bool = True
