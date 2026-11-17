@@ -1,43 +1,64 @@
 # CollabBoard X
 
-A high-performance, server-authoritative, LAN-based multi-user collaborative whiteboard and digital notebook platform.
+A high-performance, server-authoritative, LAN-based collaborative digital whiteboard and multi-page notebook platform.
 
-Built with **React 18 + TypeScript + Vite** on the frontend, **Python + FastAPI + SQLite (WAL)** on the backend, an **explicit BSD TCP socket engine** satisfying Computer Networks laboratory requirements, and a comprehensive **GoodNotes 5 Digital Notebook Suite**.
-
----
-
-## Architectural Decisions & Invariants
-
-1. **React 18 + TypeScript + Vite** for the frontend client.
-2. **Python 3.11+ + FastAPI** for the core backend.
-3. **Primary Deployment Model:** Central dedicated LAN server.
-4. **Fallback Deployment Model:** Individually hosted ad-hoc LAN server with zero-internet LAN IP discovery and terminal ASCII QR code generation.
-5. **Unified Implementation:** Both deployment models run on the **exact same backend and frontend codebase**.
-6. **WebSockets over TCP** for real-time application events in web browsers.
-7. **Explicit Socket Programming** via a dedicated raw TCP socket server (port 9001) using a 4-byte big-endian length prefix.
-8. **WebRTC / Opus Group Voice** operating strictly peer-to-peer over LAN (`iceServers: []`) without internet STUN/TURN dependencies.
-9. **SQLite (WAL Mode)** with repository abstractions for monotonic operation logging and snapshots.
-10. **Authoritative Server State:** Per-room `asyncio.Queue` Actor worker ensuring strict serialization, deduplication, conflict resolution, and gap replay.
-11. **GoodNotes 5 Complete Feature Alignment:** Multi-page notebook, advanced pen styles (Ballpoint, Fountain, Brush), whole/partial (segment-splitting) eraser, toggleable smart shape recognition, lasso selection with auto-move switch, paper background patterns & color palettes, laser pointer, PDF import/export, categorized stickers drawer, docked whiteboard chat side panel with granular audience scope, and note-synchronized audio recording.
+Built with React 18, TypeScript, and Vite on the client, and Python, FastAPI, and SQLite (WAL mode) on the backend. CollabBoard X combines an RFC 6455 WebSocket gateway with an explicit BSD TCP socket engine, peer-to-peer WebRTC voice communication, and an advanced vector inking engine.
 
 ---
 
-## 5-Person Team Architecture & Project Division (Computer Networks Course)
+## Architectural Decisions and Invariants
 
-This project is tailored for a comprehensive Computer Networks laboratory/term course, explicitly dividing responsibilities across 5 student engineers. Each module implements critical networking, distributed systems, and real-time streaming concepts:
+1. **Frontend Architecture:** React 18 with TypeScript and Vite, utilizing a 60 FPS double-buffered HTML5 canvas renderer.
+2. **Backend Architecture:** Python 3.11+ with FastAPI, structured around a clean modular domain architecture.
+3. **Primary Deployment Model:** Central dedicated LAN server binding to local network interfaces with zero external internet dependencies.
+4. **Fallback Deployment Model:** Ad-hoc host mode with automatic local IP detection and terminal QR code generation.
+5. **Unified Implementation:** Both dedicated and ad-hoc modes execute on the exact same backend and frontend codebase.
+6. **WebSockets over TCP:** Standard RFC 6455 WebSockets for web browser clients, carrying JSON-serialized canonical envelopes.
+7. **Explicit BSD TCP Sockets:** Dedicated raw TCP server on port 9001 using a 4-byte big-endian length prefix framing protocol.
+8. **WebRTC Group Voice:** Peer-to-peer audio mesh over LAN without external STUN/TURN server requirements.
+9. **Storage and Journaling:** SQLite operating in Write-Ahead Logging (WAL) mode for monotonic operation sequencing and room snapshots.
+10. **Authoritative State Engine:** Per-room actor worker (`asyncio.Queue`) enforcing total ordering, deduplication, conflict resolution, and gap replay.
+11. **Vector Notebook Capabilities:** Multi-page notebooks, velocity-sensitive pen styles, segment-splitting eraser, smart geometric shape detection, lasso selection with auto-move handoff, paper templates, PDF import and export, categorized diagram components, docked audience-scoped chat, and note-synchronized audio recording.
 
-| Student | Architectural Focus | Key Networking Concepts | Key Code Modules |
-|---|---|---|---|
-| **Person 1** | **Transport Layer & Wire Protocol Engineering** | Dual-Transport (WebSocket RFC 6455 vs Raw BSD TCP Sockets), Big-Endian 4-byte framing (`!I`), TCP stream segmentation / MTU fragmentation, Canonical Envelope codec, Session lifecycle & heartbeats. | `backend/app/transport/framing.py`<br>`backend/app/transport/websocket_gateway.py`<br>`backend/app/transport/raw_tcp_server.py`<br>`tools/lab_tcp_client.py` |
-| **Person 2** | **Server-Authoritative State Engine & Concurrency** | Actor model pattern (`asyncio.Queue`), Monotonic sequence ordering ($seq_{k+1} = seq_k + 1$), Total order broadcast, Gap detection & targeted replay (`RESYNC_REQ`), Optimistic UI reconciliation. | `backend/app/engine/room_actor.py`<br>`backend/app/engine/room_manager.py`<br>`backend/app/modules/canvas/module.py`<br>`frontend/src/features/canvas/state/CanvasStore.ts` |
-| **Person 3** | **WebRTC P2P Voice Mesh & Real-Time Signaling** | Decentralized full mesh topology ($O(N^2)$), SDP Offer/Answer signaling over WebSocket control plane, Deterministic glare avoidance, Asynchronous ICE candidate buffering, Web Audio VAD, Insecure context boundary mitigation. | `backend/app/modules/voice/module.py`<br>`frontend/src/features/voice/rtc/WebRTCVoiceMesh.ts`<br>`frontend/src/features/voice/components/` |
-| **Person 4** | **Ephemeral Traffic Optimization & Network Governance** | Spatial coordinate rate throttling (30Hz adaptive window), Linear interpolation (Lerp), Zero-disk memory queues, Granular audience multicast (socket-boundary privacy: `EVERYONE`, `HOST_ONLY`, `DIRECT`), Room locking, Remote eviction. | `backend/app/modules/chat/module.py`<br>`backend/app/modules/host_control/module.py`<br>`frontend/src/features/presence/RemoteCursorOverlay.tsx`<br>`frontend/src/features/chat/components/ChatPanel.tsx` |
-| **Person 5** | **Storage Persistence, Fault Injection & Full-Stack Client** | SQLite Write-Ahead Logging (WAL mode), Monotonic transaction journaling, 3-slot server notebook version snapshots & 1-click restore (`SNAPSHOT_RESTORE`), Network impairment testing (packet loss & jitter), 60 FPS double-buffered GoodNotes canvas engine. | `backend/app/storage/database.py`<br>`backend/app/storage/repositories/canvas_repo.py`<br>`tools/network_impairment_tester.py`<br>`frontend/src/features/canvas/components/CanvasView.tsx` |
+---
 
-> [!NOTE]
-> **Academic Artifacts Included:**
-> - [presentation.tex](file:///c:/Users/raman/Downloads/COLLAB/presentation.tex): A complete 18-slide LaTeX Beamer presentation dividing the work into 5 people with `% PERSON X` comments, focused on networking theory and architecture.
-> - [video_script.txt](file:///c:/Users/raman/Downloads/COLLAB/video_script.txt): A comprehensive 16-18 minute presentation and live demonstration video script detailing exact speaker lines, slide cues, Wireshark packet captures, terminal commands, and live whiteboard tests.
+## Core System Architecture and Subsystems
+
+The CollabBoard X platform is organized into five decoupled core engineering subsystems:
+
+### 1. Transport Layer and Wire Protocol
+- **Dual-Transport Gateway:** Supports simultaneous connections from web browser clients via WebSockets and native desktop/CLI clients via raw BSD TCP sockets.
+- **Message Framing Protocol:** Raw TCP stream uses a 4-byte big-endian unsigned integer prefix (`struct.pack("!I", length)`) followed by a UTF-8 JSON payload. The framing engine handles stream fragmentation, MTU boundaries, and message reassembly.
+- **Canonical Envelope Codec:** Standardized message structure across all transports featuring `room_id`, `sender_id`, `type`, `seq`, `client_seq`, `timestamp`, and `payload`.
+- **Session Lifecycle and Heartbeats:** Real-time connection tracking with bidirectional ping-pong health monitoring and connection pooling.
+
+### 2. Server-Authoritative State Engine and Concurrency Control
+- **Actor Model Pattern:** Each room is managed by an independent `RoomActor` worker task driven by an unbounded `asyncio.Queue`.
+- **Monotonic Sequence Ordering:** Operations are assigned strictly increasing sequence numbers ($seq_{k+1} = seq_k + 1$), providing total order broadcast across all participants.
+- **Deduplication and Idempotency:** Tracks `client_seq` per session to discard duplicate frames resulting from client retransmissions.
+- **Gap Detection and Resync Replay:** Clients detect sequence gaps and issue `ROOM_REPLAY_REQ` frames; the server retrieves missing transactions from SQLite and streams targeted catch-up packets.
+- **Optimistic UI Reconciliation:** Client renders strokes immediately in an optimistic layer, reconciling with the authoritative state upon receiving server sequence confirmations.
+
+### 3. Decentralized WebRTC Peer-to-Peer Voice Mesh
+- **Full Mesh Topology:** Audio streams directly between client nodes ($O(N^2)$ mesh) over RTP/UDP using the Opus codec, completely bypassing server CPU and bandwidth bottlenecks.
+- **Signaling Control Plane:** SDP offers, answers, and ICE candidates are exchanged over the existing WebSocket transport.
+- **Deterministic Glare Resolution:** Resolves simultaneous call collision race conditions by enforcing peer ID precedence (`myPeerId < remotePeerId` initiates connection).
+- **Asynchronous Candidate Queuing:** Buffers early ICE candidates in memory until `setRemoteDescription` resolves, preventing dropped media connections.
+- **Local Network Audio Context:** Includes fallback mechanisms for Chromium insecure origin restrictions on local IP addresses.
+
+### 4. Ephemeral Traffic Optimization and Governance
+- **Rate Throttling:** High-frequency mouse cursor movements are throttled to a 30Hz adaptive window to conserve local network bandwidth.
+- **Linear Interpolation:** Client-side remote cursor rendering employs linear interpolation (Lerp) for smooth 60 FPS motion without jitter.
+- **Memory-Only Queues:** Transient cursor and laser pointer events bypass the disk database and are processed purely in-memory.
+- **Audience-Scoped Multicast:** Socket-level message filtering for chat messages supporting three distinct routing scopes: Public (`EVERYONE`), Host-Private (`HOST_ONLY`), and 1-on-1 Direct (`DIRECT`).
+- **Host Administration:** Real-time host controls for room locking, individual/global muting, remote participant eviction, and cursor broadcast permissions.
+
+### 5. Persistence, Inking Engine, and Version Control
+- **SQLite WAL Storage:** High-throughput transactional persistence using SQLite with `PRAGMA journal_mode=WAL` and `PRAGMA synchronous=NORMAL`.
+- **Server-Side Notebook Versioning:** 3-slot server-side notebook snapshot quota per room with atomic one-click state restoration (`SNAPSHOT_RESTORE`).
+- **60 FPS Double-Buffered Canvas:** Independent offscreen buffer for static page elements and an active buffer for interactive strokes.
+- **Segment-Splitting Vector Eraser:** Splits continuous polyline vectors into separate sub-strokes upon eraser intersection without generating artifact lines.
+- **Geometric Shape Recognition:** Stroke analysis utilizing Ramer-Douglas-Peucker polygon approximation and least-squares regression.
 
 ---
 
@@ -47,51 +68,47 @@ This project is tailored for a comprehensive Computer Networks laboratory/term c
 collabboard-x/
 |-- backend/
 |   |-- app/
-|   |   |-- core/            # Config, structured logging, DI context, lifecycle
-|   |   |-- transport/       # Framing, envelope codec, WebSocket gateway, Raw TCP server
-|   |   |-- engine/          # EventRegistry, RoomActor (serializer), RoomManager
+|   |   |-- core/            # Configuration, logging, dependency injection, lifecycle
+|   |   |-- transport/       # Message framing, envelope codec, WebSocket gateway, Raw TCP server
+|   |   |-- engine/          # Event bus, RoomActor (serializer), RoomManager
 |   |   |-- modules/         # Feature modules: canvas, chat, presence, voice, host_control
-|   |   |-- storage/         # SQLite WAL database, repositories, snapshot manager
-|   |   |-- launcher/        # LAN IP detector, terminal ASCII QR generator, host CLI
-|   |   |-- main.py          # FastAPI application & static asset server
-|   |-- tests/               # 24 automated unit and integration tests
+|   |   |-- storage/         # SQLite WAL engine, repositories, snapshot manager
+|   |   |-- launcher/        # Network IP discovery, terminal QR generator, host CLI
+|   |   |-- main.py          # FastAPI application and static asset server
+|   |-- tests/               # 25 automated unit and integration tests
 |-- frontend/
 |   |-- src/
 |   |   |-- core/network/    # ConnectionManager, EnvelopeCodec
 |   |   |-- features/
-|   |   |   |-- canvas/      # Double-buffered 60FPS canvas, ToolRegistry, RendererRegistry
-|   |   |   |   |-- recognition/ # ShapeRecognizer (Ramer-Douglas-Peucker geometric inference)
+|   |   |   |-- canvas/      # Double-buffered canvas, ToolRegistry, RendererRegistry
+|   |   |   |   |-- recognition/ # Geometric ShapeRecognizer (RDP algorithm)
 |   |   |   |   |-- renderers/   # Pen styles, Highlighter, Shapes, Text, Image, Stickers
 |   |   |   |   |-- tools/       # Select, Pen, Highlighter, Eraser, Lasso, Shapes, Text, Laser
 |   |   |   |   |-- state/       # CanvasStore reactive multi-page state
 |   |   |   |-- notebook/    # Multi-page system: PageNavigationBar, ThumbnailsDrawer, PdfHandler
-|   |   |   |-- elements/    # Reusable StickerDrawer (Math, Chemistry, Flowcharts, Sticky notes)
+|   |   |   |-- elements/    # Diagram components drawer (Flowcharts, Science, Sticky notes)
 |   |   |   |-- audio/       # Note-synchronized AudioRecorderBar with playback timeline
 |   |   |   |-- presence/    # Remote cursor overlay, participant roster
 |   |   |   |-- chat/        # Real-time text chat drawer
 |   |   |   |-- voice/       # WebRTC voice mesh, Web Audio VAD, voice controls
 |   |   |   |-- host/        # Room locking, snapshot export/restore modal
 |   |   |-- pages/           # DashboardPage, WhiteboardRoomPage
-|   |-- dist/                # Pre-built static assets (served by FastAPI)
-|-- dist/
-|   |-- CollabBoardX-Server.exe        # Standalone Central Dedicated Server binary
-|   |-- CollabBoardX-Client.exe        # Standalone Desktop GUI Client binary
+|   |-- dist/                # Compiled production static assets
 |-- tools/
-|   |-- lab_tcp_client.py              # Raw TCP socket client for CN Lab demonstration
-|   |-- network_impairment_tester.py   # Fault injection & sequence gap recovery tester
+|   |-- lab_tcp_client.py              # CLI BSD raw TCP socket client
+|   |-- network_impairment_tester.py   # Packet drop, latency jitter, and resync tester
 |-- docs/
 |   |-- PROTOCOL_SPEC.md               # Application protocol specification (v2.0)
-|   |-- STANDALONE_EXECUTABLES_AND_GUI_GUIDE.md # Executables deployment & desktop GUI guide
-|   |-- GOODNOTES_FEATURE_GUIDE.md     # Complete GoodNotes 5 user & developer manual
-|   |-- LAB_EXPERIMENT_GUIDE.md        # Computer Networks lab evaluation guide & Wireshark steps
-|   |-- M1_NETWORKING_CORE.md          # Milestone 1 report
-|   |-- M2_CANVAS_ENGINE.md            # Milestone 2 report
-|   |-- M3_FRONTEND_WHITEBOARD.md      # Milestone 3 report
-|   |-- M4_PRESENCE_AND_CHAT.md        # Milestone 4 report
-|   |-- M5_WEBRTC_VOICE.md             # Milestone 5 report
-|   |-- M6_HOST_CONTROLS_AND_DEPLOYMENT.md # Milestone 6 report
-|-- package_executable.py              # Universal PyInstaller packaging script (Windows & Linux)
-|-- build_windows_exe.bat              # One-click Windows build batch script
+|   |-- STANDALONE_EXECUTABLES_AND_GUI_GUIDE.md # Executables deployment and desktop GUI guide
+|   |-- GOODNOTES_FEATURE_GUIDE.md     # Feature manual and tool architecture
+|   |-- M1_NETWORKING_CORE.md          # Transport and framing implementation report
+|   |-- M2_CANVAS_ENGINE.md            # Canvas and rendering engine report
+|   |-- M3_FRONTEND_WHITEBOARD.md      # Client UI and state management report
+|   |-- M4_PRESENCE_AND_CHAT.md        # Real-time chat and presence architecture
+|   |-- M5_WEBRTC_VOICE.md             # Peer-to-peer voice mesh report
+|   |-- M6_HOST_CONTROLS_AND_DEPLOYMENT.md # Host governance and deployment report
+|-- package_executable.py              # Universal PyInstaller packaging script (Windows and Linux)
+|-- build_windows_exe.bat              # Windows packaging batch script
 |-- server_host.py                     # Root entrypoint for Central Dedicated Server
 |-- client_gui.py                      # Root entrypoint for Desktop GUI Client
 |-- standalone_host.py                 # Root launcher for Standalone Host mode
@@ -99,89 +116,72 @@ collabboard-x/
 
 ---
 
-## GoodNotes 5 Feature Suite Highlights
+## Digital Notebook and Canvas Capabilities
 
-### 1. Advanced Inking & Pen Styles
-- **Ballpoint Pen:** Crisp uniform line weight with Catmull-Rom spline curve smoothing.
+### 1. Vector Inking and Stylus Support
+- **Ballpoint Pen:** Uniform line weight with Catmull-Rom spline curve smoothing.
 - **Fountain Pen:** Velocity and pointer-pressure responsive stroke tapering.
 - **Brush Pen:** Expressive calligraphic variable-width stroke simulation.
 - **Highlighter:** Translucent multiply blending (`opacity: 0.38`), straight-line lock, and independent layer stacking.
+- **Touch and Stylus Compatibility:** Accidental touch rejection, pressure sensitivity support, and touch pan/zoom gestures.
 
-### 2. Intelligent Eraser System & Transactional Compound History Engine
+### 2. Intelligent Eraser and Transactional History
 - **Whole-Stroke Erasing:** Removes entire vector element upon intersection with eraser path.
 - **Partial-Stroke Erasing:** Segment-based vector polyline trimming that isolates points within the eraser radius and cleanly splits remaining points into independent sub-strokes with identical styling, completely eliminating phantom connector lines.
-- **Erase Highlighter Only:** Toggle to erase only highlighter strokes while leaving pencil handwriting, shapes, and notes intact.
-- **Transactional Compound Undo/Redo Engine:** Continuous eraser swipes, partial splitting passes, and multi-selection deletions are grouped into atomic transaction blocks (`beginTransaction()` / `endTransaction()`). Pressing `Ctrl+Z` or clicking the prominent **Undo & Redo buttons** in the primary toolbar or header bar undoes operations seamlessly. Automatic window-level pointerup listeners guarantee transactions are never trapped in open states. All snapshots are deeply cloned to prevent state mutation.
+- **Erase Highlighter Only:** Toggle to erase only highlighter strokes while leaving handwriting, shapes, and notes intact.
+- **Transactional Compound Undo/Redo:** Continuous eraser swipes, partial splitting passes, and multi-selection deletions are grouped into atomic transaction blocks (`beginTransaction()` / `endTransaction()`). Pressing `Ctrl+Z` or clicking the Undo and Redo buttons executes atomic undos without intermediate broken states.
 
-### 2.1 Server-Side Notebook Version Control & Snapshot Restores (3-Notebook Quota)
-- **Persistent Server Slots:** Each participant/host is allocated **3 dedicated notebook version slots** saved directly in the server's SQLite WAL database.
-- **Named Version Snapshots:** Users can snapshot their active whiteboard with custom or timestamped version names (e.g. `Physics Lecture Part 1`). Every snapshot encapsulates all canvas elements, multi-page hierarchies, paper templates, and background colors.
-- **Instant Whiteboard Restoration:** Restore any saved version with a single click (`[ 🔄 Restore ]`). The server atomically replaces room state, updates SQLite, and broadcasts the restored snapshot and announcement to all connected clients in real time.
-- **Quota Management & Slot Recycling:** A visual 3-slot progress indicator (`X / 3 Slots Used`) alerts users when capacity is reached, offering a dropdown to overwrite existing versions or delete unused slots.
-- **Offline File Backups:** Secondary JSON Export/Import buttons allow saving and restoring state from local disk files.
+### 3. Server-Side Notebook Version Control
+- **Persistent Server Slots:** Each room supports a dedicated 3-slot notebook snapshot store saved directly in the server SQLite WAL database.
+- **Named Version Snapshots:** Users can snapshot their active whiteboard with custom or timestamped version names. Each snapshot encapsulates all canvas elements, multi-page hierarchies, paper templates, and background colors.
+- **Instant Whiteboard Restoration:** Restore any saved version with a single click (`[Restore]`). The server atomically replaces room state, updates SQLite, and broadcasts the restored snapshot to all connected clients in real time.
+- **Quota Management:** Visual slot usage indicator (`X / 3 Slots Used`) alerting users when capacity is reached, with options to overwrite or prune versions.
+- **Offline File Backups:** Secondary JSON Export and Import buttons allow archiving and restoring board states from local disk files.
 
-### 3. Geometric Shapes & Smart Shape Detection Toggle
-- **Built-in Geometric Primitives:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Double-Arrow, Triangle, Star, and Polygons.
-- **Smart Shape Detection:** Inactive by default. Toggleable on demand via the toolbar button (`[ ✨ Shapes: ON/OFF ]`). Analyzes freehand strokes using the Ramer-Douglas-Peucker polygon approximation and least-squares regression to snap strokes into crisp geometric forms.
+### 4. Geometric Shapes and Smart Detection
+- **Geometric Primitives:** Rectangle, Square, Circle, Ellipse, Straight Line, Directional Arrow, Double-Arrow, Triangle, Star, and Polygons.
+- **Smart Shape Detection:** Inactive by default; toggleable via toolbar button (`[Shapes: ON/OFF]`). Analyzes freehand strokes using Ramer-Douglas-Peucker polygon approximation and least-squares regression to snap strokes into crisp geometric forms.
 
-### 4. Lasso Selection with Instant Move Handoff
-- **Freeform Lasso:** Ray-casting polygon containment selection for handwriting, shapes, text, images, and stickers.
-- **Instant Move Tool Switch:** Automatically switches to the Select / Move tool immediately upon releasing the lasso, allowing instant drag, transform, and rotation without an extra click.
-- **Transformations:** Move, resize, duplicate (`Ctrl+D`), bring to front, send to back, and **object locking** to prevent accidental modifications.
+### 5. Lasso Selection with Auto-Move Handoff
+- **Freeform Lasso:** Ray-casting polygon containment selection for handwriting, shapes, text, images, and diagram elements.
+- **Instant Move Tool Switch:** Automatically switches to the Select / Move tool immediately upon releasing the lasso, allowing instant drag, transform, and rotation.
+- **Transformations:** Move, resize, duplicate (`Ctrl+D`), bring to front, send to back, and object locking to prevent accidental modifications.
 
-### 5. Multi-Page Notebook, Paper Templates & Color Palettes
+### 6. Multi-Page System, Paper Templates, and Color Palettes
 - **Page Management:** Bottom navigation bar (`< Page 1 / 4 >`), add page, duplicate page, delete page (with cascading element cleanup), and visual thumbnail drawer.
 - **Paper Background Patterns:** Blank, Ruled (lined paper with margin), Math Grid, and Dotted.
 - **Paper Color Palettes:** Clean White, Ivory Warm, Slate Dark, Blackboard/Chalkboard, and Soft Gray, with adaptive contrast that automatically renders bright grid/ruled lines on dark paper templates.
 - **Real-Time Network Sync:** Paper template and background color changes broadcast authoritatively across all connected participants.
 
-### 6. PDF Document Import & Export
+### 7. PDF Document Import and Export
 - **PDF Import:** Render multi-page PDFs directly onto notebook page backgrounds via `pdfjs-dist`.
 - **Vector PDF Export:** Export entire multi-page notebook (paper templates + ink annotations) into a high-resolution PDF document using `jspdf`.
 
-### 7. Professional Viewport Navigation (Zoom & Pan)
-- **Cursor-Centered Wheel Zoom:** Exponential smooth zoom centered exactly at mouse pointer position with native scroll blocking.
-- **Touchpad & Pinch Gestures:** Smooth two-finger pan and pinch-to-zoom (`ctrlKey`).
-- **Floating Zoom Widget:** Bottom-left floating controls featuring `[ - ]`, `[ 100% ]` reset, `[ + ]`, and `[ ⛶ Fit to Page ]` centering.
-- **Laser Pointer:** Glowing red/cyan tip with an ephemeral fading particle trail synchronized across peers.
-- **Decluttered Canvas:** Removed drafting ruler to maintain a focused, modern digital notebook experience.
+### 8. Viewport Navigation (Zoom and Pan)
+- **Cursor-Centered Wheel Zoom:** Smooth exponential zoom centered at mouse pointer position with native scroll blocking.
+- **Touchpad and Pinch Gestures:** Smooth two-finger pan and pinch-to-zoom (`ctrlKey`).
+- **Floating Zoom Widget:** Floating controls featuring `[ - ]`, `[ 100% ]` reset, `[ + ]`, and `[ Fit to Page ]` centering.
+- **Laser Pointer:** Glowing tip with an ephemeral fading particle trail synchronized across peers.
 
-### 8. Categorized Elements & Editable Sticky Notes
-- Intuitive, tabbed sticker drawer with 1-click center placement:
-  - **Sticky Notes:** Pastel yellow, blue, green, pink, purple, and orange with multi-line text input and adhesive strip styling.
-  - **In-Place Note Editing:** Double-click or double-tap any sticky note or text element on canvas to launch the inline editing overlay.
-  - **Floating Canvas Badge:** Selected sticky notes display a floating `[ ✏️ Edit Note Text ]` badge directly on canvas.
-  - **Toolbar Action & Pastel Swatches:** Active sticky notes provide an **`[ ✏️ Edit Text ]`** button and 6 pastel color pickers (Canary Lemon `#fef08a`, Mint `#bbf7d0`, Sky `#bae6fd`, Bubblegum `#fbcfe8`, Lavender `#e9d5ff`, Peach `#fed7aa`).
-  - **Word Wrapping & Empty State Guidance:** Multi-line text wraps with automatic padding, and empty notes display an italic placeholder `(Double-click to write note...)`.
-  - **Reactions & Emojis:** Quick emoji grid (👍, ❤️, 🚀, 🔥, 💡, 🎯, 👏, 🎉, 💯, ⚠️, ❓, 🏆, etc.).
-  - **Rubber Stamps & Badges:** Official circular and rectangular stamps (APPROVED, CONFIDENTIAL, REVIEWED, DRAFT, URGENT).
-  - **Flowcharts & Diagrams:** Start/End terminal, Process step, Decision fork, Database cylinder, Cloud service.
-  - **Math & Science:** $\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$, Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA helix, Resistor.
-- **Auto-Select & Move:** Elements automatically select and switch to the Move tool upon insertion for immediate drag repositioning.
+### 9. Sticky Notes and Diagramming Components
+- **Sticky Notes:** Multi-line text input with adhesive styling across six pastel color swatches (Canary Yellow `#fef08a`, Mint `#bbf7d0`, Sky `#bae6fd`, Bubblegum `#fbcfe8`, Lavender `#e9d5ff`, Peach `#fed7aa`).
+- **In-Place Editing:** Double-click any note or text element on canvas to launch the inline editing overlay.
+- **Rubber Stamps:** Badges for APPROVED, CONFIDENTIAL, REVIEWED, DRAFT, and URGENT.
+- **Flowcharts and Diagrams:** Start/End terminals, Process steps, Decision forks, Database cylinders, and Cloud services.
+- **Math and Science:** LaTeX formulas ($\sum_{i=1}^n$, $\int f(x)dx$, $\sqrt{a^2+b^2}$), Benzene ring ($\text{C}_6\text{H}_6$), Bohr atom, DNA helix, and Circuit components.
 
-### 9. Docked Whiteboard Chat with Granular Audience Scope
-- **Side Panel Integration:** Docked directly onto the whiteboard (`ChatSidePanel`) instead of a separate tab, keeping your drawings continuously in view while chatting.
+### 10. Docked Whiteboard Chat with Granular Scopes
+- **Side Panel Integration:** Docked directly onto the whiteboard (`ChatSidePanel`) instead of a modal, keeping drawings visible while communicating.
 - **Audience Targeting:**
-  - `👥 Everyone (Public)`: Broadcasts messages to all participants in the room.
-  - `👑 Room Host (Private)`: Sends private messages directly to room hosts only.
-  - `🔒 Particular Participant (Direct)`: Encrypted 1-on-1 private messaging routed exclusively to the selected participant and the sender.
-- **Color-Coded Badges:** Clear visual indicators for Host-Only and Direct messages with unread counter badges on the header chat toggle button.
+  - `Everyone (Public)`: Broadcasts messages to all participants in the room.
+  - `Room Host (Private)`: Sends private messages directly to room hosts.
+  - `Particular Participant (Direct)`: 1-on-1 private messaging routed exclusively to the selected participant and sender.
+- **Visual Status:** Badges for Host-Only and Direct messages with unread counter badges on the header chat toggle.
 
-### 10. Note-Synchronized Audio Recording
-- Record lectures or group discussions using the browser's Web Audio MediaRecorder.
-- Real-time elapsed recording timer, audio playback bar, waveform scrubber, and **note timestamp synchronization** (scrubbing audio spotlights notes created during that time slice).
-- Audio export in `.webm` format.
-
-### 11. Modernized Dashboard & Mobile-Friendly GUI
-- **Fun Avatar Picker:** Choose from 12 distinct avatar characters (🦊, 🦉, 🚀, 🎨, 💡, ⚡, 🐱, 🐼, 👾, 🌟, 🎯, 🔮) saved in local storage.
-- **Segmented Mode Switch:** Clean cards for `[ Create Room ]` vs `[ Join Room ]`.
-- **Recent Rooms History:** Quick-join chips for the last 5 visited rooms with 1-click entry.
-- **Mobile Responsive Design:** 
-  - Header compacts gracefully on screens $< 768\text{px}$ without button overflow.
-  - Top floating drawing toolbar auto-scrolls horizontally with tight padding.
-  - Audio recording bar docks safely at `top: 58px, right: 8px`, completely clearing the top toolbar.
-  - Bottom Page Navigation bar docks at bottom-right, cleanly separating from the bottom-left zoom controls.
-  - First-class touch and Apple Pencil / stylus support with accidental scroll suppression.
+### 11. Note-Synchronized Audio Recording
+- Record lectures or group discussions using browser Web Audio MediaRecorder.
+- Real-time elapsed recording timer, audio playback bar, waveform scrubber, and note timestamp synchronization (scrubbing audio spotlights notes created during that time slice).
+- Audio export in standard `.webm` format.
 
 ---
 
@@ -201,26 +201,24 @@ collabboard-x/
 | `E` | Switch to Eraser tool |
 | `L` | Switch to Lasso tool |
 | `T` | Switch to Text tool |
-| `Home` | Return to Home (Reset Pan to 0, 0 & Zoom to 100%) |
+| `Home` | Return to Home (Reset Pan to 0, 0 and Zoom to 100%) |
 
 ---
 
-## Central Server & GUI Client Architecture
-
-CollabBoard X provides **two dedicated standalone executables**:
+## Architecture Topology
 
 ```
 +-------------------------------------------------------------+
-|              CollabBoardX-Server.exe (Central Server)       |
+|              CollabBoardX-Server (Central Server)           |
 |  - Runs on server PC or host machine                        |
 |  - FastAPI WebSocket Gateway + Raw TCP Server (Port 9001)   |
 |  - SQLite WAL Authoritative State & Sequential Processing   |
 |  - Serves LAN clients at http://<LAN_IP>:8000               |
 +------------------------------+------------------------------+
                                |
-       +-----------------------+-----------------------+
-       | LAN WebSocket & TCP   | LAN WebSocket & TCP   |
-       v                       v                       v
+        +----------------------+-----------------------+
+        | LAN WebSocket & TCP  | LAN WebSocket & TCP   |
+        v                      v                       v
 +-----------------------+ +-----------------------+ +-----------------------+
 | CollabBoardX-Client   | | CollabBoardX-Client   | | Browser / Tablet / iPad|
 | (PC 1: Room Host)     | | (PC 2: Peer Client)   | | (Mobile QR Join)      |
@@ -232,233 +230,256 @@ CollabBoard X provides **two dedicated standalone executables**:
 
 ---
 
-## Standalone Executable Releases & Local Reproduction
+## Standalone Executable Releases
 
-CollabBoard X provides standalone, zero-dependency release binaries for both Windows (`.exe`) and Linux (ELF), allowing immediate deployment on air-gapped LAN environments without requiring pre-installed Python, Node.js, or external package managers.
+CollabBoard X provides standalone, zero-dependency release binaries for Windows (`.exe`) and Linux (ELF), allowing immediate deployment on air-gapped LAN environments without requiring pre-installed Python, Node.js, or external package managers.
 
-### 1. Release Binaries Overview
-| Executable | Size | Target Machine | Description |
+| Executable | Approximate Size | Target Machine | Description |
 |---|---|---|---|
-| **`dist/CollabBoardX-Server.exe`** | ~32 MB | Central Dedicated Server Machine | Bundles Python 3 runtime, Uvicorn, FastAPI, SQLite WAL state engine, explicit BSD TCP socket engine (port 9001), and the compiled React 18 production build. |
-| **`dist/CollabBoardX-Client.exe`** | ~10 MB | User Collaborator Laptops / PCs | Native dark-themed graphical launcher with real-time server latency ping (`[Ping Server]`), local LAN IP auto-detection, and one-click whiteboard room launch. |
+| **`dist/CollabBoardX-Server.exe`** | ~32 MB | Central Dedicated Server | Bundles Python runtime, Uvicorn, FastAPI, SQLite WAL state engine, explicit BSD TCP socket engine (port 9001), and the compiled React production build. |
+| **`dist/CollabBoardX-Client.exe`** | ~10 MB | User Collaborator Machines | Native graphical launcher with real-time server latency ping (`[Ping Server]`), local LAN IP auto-detection, and one-click whiteboard room launch. |
 
-> [!NOTE]
-> For mobile phones, iPads, and Android tablets, no binary or app install is needed. Simply scan the real-time **Share & QR Code** displayed by the host or client.
-
----
-
-### 2. How to Reproduce the Standalone Executables Locally
-
-#### Prerequisites
-- **Python 3.11+** (Python 3.13 tested) with `pip`
-- **Node.js 18+** and `npm`
-- **PyInstaller**: `pip install pyinstaller`
-
-#### Option A: Universal Automated Build (Recommended)
-Run the automated packaging script from the repository root:
-```powershell
-# Windows PowerShell:
-py -3.13 package_executable.py all
-
-# Or run the Windows batch script:
-.\build_windows_exe.bat
-```
-This script automatically:
-1. Installs frontend dependencies and executes `npm run build` in `frontend/`.
-2. Packages `server_host.py` into `dist/CollabBoardX-Server.exe` with bundled frontend static assets.
-3. Packages `client_gui.py` into `dist/CollabBoardX-Client.exe` with all Tkinter GUI dependencies.
-
-#### Option B: Step-by-Step Manual Reproduction
-If you wish to compile each component independently:
-```powershell
-# Step 1: Compile the React frontend
-npm --prefix frontend install
-npm --prefix frontend run build
-
-# Step 2: Install Python dependencies
-pip install -r backend/requirements.txt pyinstaller
-
-# Step 3: Package the Central Server executable
-pyinstaller --noconfirm CollabBoardX-Server.spec
-
-# Step 4: Package the Desktop GUI Client executable
-pyinstaller --noconfirm CollabBoardX-Client.spec
-```
-Both generated binaries will be placed in the `dist/` directory.
+*Note: For mobile phones, iPads, and Android tablets, no binary or application install is needed. Collaborators join by navigating to the host server address or scanning the on-screen QR code.*
 
 ---
 
-### 3. Cross-OS Compatibility & Linux Reproduction
-CollabBoard X is 100% cross-platform compatible across Windows, Linux, and macOS. To build standalone release binaries on Linux (e.g. Ubuntu / Debian / Fedora / Arch):
+## Building from Source and Reproducibility
+
+This section provides complete, deterministic instructions to reproduce and build both the frontend and backend from a clean Git repository clone (where `.gitignore` artifacts like `node_modules/`, `frontend/dist/`, `dist/`, and runtime databases are excluded).
+
+### 1. Prerequisites and Toolchain Verification
+
+Ensure the following tools are installed and accessible in your system PATH:
+
+- **Python:** Version 3.11 or higher (Python 3.11, 3.12, and 3.13 tested).
+- **Node.js:** Version 18.0.0 or higher with `npm` (Node 18, 20, or 22 LTS recommended).
+- **Git:** Version 2.30 or higher.
+- **PyInstaller:** Optional, required only for building standalone executable release binaries (`pip install pyinstaller`).
+
+Verify toolchain versions:
+```bash
+python --version   # or py -3.13 --version on Windows
+node --version
+npm --version
+```
+
+---
+
+### 2. Step-by-Step Build Reproduction
+
+#### Step 1: Clone the Repository
+```bash
+git clone <REPOSITORY_URL>
+cd collabboard-x
+```
+
+#### Step 2: Build the Frontend Web Application
+The frontend is built with React 18, TypeScript, and Vite. Dependencies are pinned in `frontend/package-lock.json` to guarantee exact, reproducible builds across environments.
 
 ```bash
-# 1. Install system build prerequisites
-sudo apt-get update && sudo apt-get install -y python3 python3-pip python3-tk nodejs npm
+# Navigate to frontend directory
+cd frontend
 
-# 2. Build the production React frontend
-npm --prefix frontend install
-npm --prefix frontend run build
+# Install exact dependencies from package-lock.json
+npm install
 
-# 3. Install Python dependencies
-pip3 install -r backend/requirements.txt pyinstaller
+# Compile TypeScript and bundle production static assets
+npm run build
 
-# 4. Compile Linux standalone executables
-python3 package_executable.py all
+# Return to project root directory
+cd ..
 ```
-This generates standalone Linux executable binaries in `dist/`:
-- `dist/CollabBoardX-Server`
-- `dist/CollabBoardX-Client`
 
----
+**Verification:** Confirm that the production bundle is generated in `frontend/dist/`:
+- `frontend/dist/index.html`
+- `frontend/dist/assets/*.js`
+- `frontend/dist/assets/*.css`
 
-## Quick Start Guide
+*Development Mode Alternative:* If you wish to run the frontend in Vite live-development mode with hot module replacement:
+```bash
+cd frontend
+npm run dev
+# Vite dev server runs at http://localhost:5173 with proxy configured to backend port 8000
+```
 
-### 1. Launching the Central Dedicated Server
-Run on the server machine:
-```powershell
-# Using the pre-compiled standalone executable:
-.\dist\CollabBoardX-Server.exe --port 8000 --tcp-port 9001
+#### Step 3: Set Up the Backend Environment
+The backend is built with Python 3.11+, FastAPI, and SQLite WAL mode.
 
-# Or running directly from Python source:
+```bash
+# Optional but recommended: Create and activate a Python virtual environment
+# Linux / macOS:
+python3 -m venv venv
+source venv/bin/activate
+
+# Windows (PowerShell):
+py -3.13 -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Install exact backend dependencies
+pip install -r backend/requirements.txt
+```
+
+#### Step 4: Verify Backend Integrity with Automated Tests
+Execute the full test suite to verify transport framing, event dispatching, room concurrency, and database persistence:
+
+```bash
+# Run pytest across all test suites
+pytest -v backend/tests
+```
+**Expected Output:** All 25 test suites pass (100% pass rate).
+
+#### Step 5: Run the Full-Stack Application
+Start the central server from the repository root:
+
+```bash
+# Linux / macOS:
+python3 server_host.py --port 8000 --tcp-port 9001
+
+# Windows:
 py -3.13 server_host.py --port 8000 --tcp-port 9001
 ```
-The server will:
-- Detect your LAN IP (e.g. `192.168.1.37`).
-- Start WebSockets on port 8000 and raw TCP sockets on port 9001.
-- Display connection info for all client PCs and tablets.
 
-### 2. Launching the Desktop GUI Client
-Run on any user PC across the LAN:
+**Startup Behavior:**
+1. Automatically identifies the active local area network IP address (e.g., `192.168.1.37`).
+2. Initializes SQLite in Write-Ahead Logging mode (`collabboard_state.db`).
+3. Starts the HTTP and WebSocket gateway on port 8000.
+4. Starts the raw BSD TCP socket server on port 9001.
+5. Automatically locates and mounts `frontend/dist/` at the root URL `/`.
+6. Generates a scannable ASCII QR code in the terminal for mobile and tablet LAN participants.
+
+**Accessing the Application:**
+- **Web Clients (Laptops, Desktops, iPads, Tablets):** Open any modern browser and navigate to `http://<LAN_IP>:8000` (or `http://localhost:8000` locally).
+- **Desktop Graphical Client (Optional):** Run the native Python Tkinter GUI launcher:
+  ```bash
+  python client_gui.py
+  ```
+
+---
+
+### 3. Reproducing Standalone Release Executables
+
+CollabBoard X includes an automated packaging pipeline (`package_executable.py`) that bundles the Python runtime, Uvicorn, FastAPI, SQLite WAL engine, raw TCP socket engine, and the compiled `frontend/dist/` into self-contained, zero-dependency release binaries.
+
+#### Building on Windows (.exe)
 ```powershell
-# Using the pre-compiled standalone executable:
-.\dist\CollabBoardX-Client.exe
+# Ensure PyInstaller is installed
+pip install pyinstaller
 
-# Or running directly from Python source:
-py -3.13 client_gui.py
+# Run universal automated packaging script
+py -3.13 package_executable.py all
+
+# Alternatively, run the Windows batch builder
+.\build_windows_exe.bat
 ```
-The desktop GUI window will pop up immediately:
-1. **Server Address Input:** Enter the Central Server LAN IP (e.g. `192.168.1.37:8000`).
-2. **Ping Button:** Live latency indicator verifies server status in real time.
-3. **Display Name:** Enter your name.
-4. **Create or Join Board:** Click "Create New Whiteboard" or enter a Room Code.
-5. **Share & Graphical QR Code:** Click the **Share & QR** button in the top bar to pop up a visual QR code for mobile/tablet users to scan!
+**Generated Artifacts in `dist/`:**
+- `dist/CollabBoardX-Server.exe` (~32 MB): Standalone central server executable.
+- `dist/CollabBoardX-Client.exe` (~10 MB): Standalone desktop graphical launcher.
 
-### 3. Redesigned Minimal Navigation UI: Logo Popover & Dedicated Workspace Tabs
-The user interface features a clean, minimal 52px top navigation header divided into three focused sections:
+#### Building on Linux (ELF Executables)
+```bash
+# Install Tkinter system headers and PyInstaller
+sudo apt-get update && sudo apt-get install -y python3-tk
+pip3 install pyinstaller
 
-1. **Left: Interactive Brand Logo Popover:**
-   - Clicking the **CollabBoard X** brand logo on the far left opens a rich meeting & connection details popover:
-     - **Live Connection Status:** Real-time indicator dot (🟢 Connected / 🟡 Reconnecting / 🔴 Disconnected) and transport type (`WebSocket` or `Raw TCP`).
-     - **Room Code & 1-Click Copy Link:** Displays the current Room ID with an instant copy button (`📋 Copy Link`) providing visual copied feedback.
-     - **Share & QR Code Modal Trigger:** Instant access to mobile scanning QR code modal.
-     - **Server LAN Address:** Shows server endpoint (e.g. `192.168.1.37:8000`).
-     - **User Role Badge:** Clear indication of current role (`👑 HOST`, `✏️ EDITOR`, or `👁️ VIEWER`).
-     - **Host Master Board Access Switch:** Host can toggle room edit lock directly from the logo popover (`[ 🔓 Board: Open ]` / `[ 🔒 Board: Locked ]`).
-     - **Pending Cursor Requests:** Approvals for participant cursor sharing displayed directly inside the popover.
-     - **Leave Meeting:** Clean leave button to safely disconnect.
-
-2. **Center: Clean Two-Tab Workspace Switcher:**
-   - **`🎨 Whiteboard` Tab:**
-     - Pure, distraction-free canvas and digital note-taking experience with **zero floating clutter**.
-     - Floating GoodNotes toolbar centered at top (`PenTool` [Ballpoint, Fountain, Brush], `Highlighter`, `Eraser` [Whole / Partial segment-splitting], `Lasso`, `Shapes`, `Text`, `Stickers`, `Laser`, `✨ Shapes Toggle`, `📄 Paper Background`).
-     - Note-synchronized `AudioRecorderBar` in top right.
-     - Page navigation and thumbnails drawer at bottom.
-     - Smooth exponential zoom widget at bottom left (`[ - ]`, `[ 100% ]`, `[ + ]`, `[ ⛶ Fit ]`, and `[ 🏠 Home ]`).
-     - Canvas state is preserved continuously in memory when switching tabs (no redraws or lost context).
-     - **Board Access Enforcement:** When the Host disables board access, all non-host participants have their drawing toolbar hidden and see a prominent **"🔒 BOARD ACCESS DISABLED BY HOST"** banner. Canvas drawing is locked to read-only panning.
-   - **`👥 Controls` Tab (with Participant Count Badge):**
-     - Live participant counter badge (e.g. `Controls (3)`).
-     - **Participants & Permissions Matrix:** Grant or revoke individual editing access in real time.
-     - **Host Moderation & Muting:** Mute individual participants, click **"Mute All"**, or kick disruptive participants.
-     - **Air-Gapped WebRTC Voice Mesh Controls:** Join Voice, Mute, Deafen, and live Voice Activity Detection (VAD).
-     - **Notebook Version Control & Snapshots:** 3-slot notebook quota, named snapshots, 1-click restore (`[ 🔄 Restore ]`), and deletion.
-
-3. **Right: Parallel Chat Drawer & Quick Actions:**
-   - **`💬 Chat` Button (with Unread Counter):** Opens the real-time chat panel side-by-side alongside the whiteboard without obscuring the canvas or navigating away.
-   - **Audience-Scoped Chatting:** Select message scope: `👥 Everyone (Public)`, `👑 Room Host (Private)`, or `🔒 Particular Participant (Direct 1-on-1)`. Socket-boundary filtering ensures non-permitted clients never receive private frames.
-   - **Quick Voice Mic Toggle:** Mute/unmute microphone directly from the header.
-   - **User Profile Pill & Leave Button.**
+# Compile Linux release binaries
+python3 package_executable.py all
+```
+**Generated Artifacts in `dist/`:**
+- `dist/CollabBoardX-Server`: Standalone Linux ELF server binary.
+- `dist/CollabBoardX-Client`: Standalone Linux ELF client GUI binary.
 
 ---
 
-### 3.1 WebRTC Voice over LAN Engine & Security Invariants
+### 4. Clean Rebuild and Troubleshooting Checklist
 
-CollabBoard X implements a high-performance, decentralized WebRTC voice mesh designed specifically for local area networks:
+#### Performing a Clean Rebuild
+To completely purge all build artifacts, dependencies, and runtime databases before rebuilding:
 
-- **Full Peer-to-Peer Mesh ($O(N^2)$):**
-  - Audio packets (Opus codec over RTP/UDP) stream directly peer-to-peer across LAN nodes without routing through the server CPU.
-  - Operates strictly offline without external STUN/TURN dependencies (`iceServers: []` with fallback).
-- **Asynchronous ICE Candidate Queuing:**
-  - Solves the classic WebRTC race condition where network ICE candidates arrive before `setRemoteDescription` completes. Early candidates are buffered in an internal `pendingCandidates` map and flushed immediately once the remote description is active, preventing `InvalidStateError` drops.
-- **Deterministic Glare Avoidance:**
-  - Prevents dual-offer collisions when peers join simultaneously by enforcing strict ID precedence (`myPeerId < remotePeerId` initiates `createOffer`).
-- **Active Voice Session Tracking:**
-  - Server maintains an active voice roster (`room_voice_peers`) and responds to `VOICE_ROSTER_REQ` with `VOICE_ROSTER_RES`. Peers only initiate WebRTC connections to users who have actually joined voice, eliminating call attempts to dormant participants.
-- **Handling Chromium Insecure Context Boundary on LAN (`http://<LAN_IP>:8000`):**
-  - Modern Chromium browsers (Chrome, Edge, Brave) disable `navigator.mediaDevices.getUserMedia` on non-localhost HTTP origins (`window.isSecureContext === false`).
-  - CollabBoard X detects this automatically and provides two seamless solutions:
-    1. **Browser Flag (One-Time Setup):** Navigate to `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<LAN_IP>:8000`, and click Relaunch.
-    2. **Native Desktop GUI Client (`CollabBoardX-Client.exe`):** Connect using the standalone desktop client, which runs locally on `127.0.0.1` and inherently satisfies the browser secure context requirement.
+```bash
+# Windows (PowerShell):
+Remove-Item -Recurse -Force frontend/dist, frontend/node_modules, dist, build, *.db, *.db-wal, *.db-shm -ErrorAction SilentlyContinue
+
+# Linux / macOS:
+rm -rf frontend/dist frontend/node_modules dist build *.db *.db-wal *.db-shm
+```
+Then repeat Step 2 and Step 3 above.
+
+#### Common Troubleshooting Steps
+- **Port Conflicts:** If port 8000 or 9001 is already bound by another service, specify alternate ports:
+  ```bash
+  python server_host.py --port 8080 --tcp-port 9002
+  ```
+- **Local Firewall Rules:** Ensure your OS firewall permits inbound connections on ports 8000 (TCP) and 9001 (TCP) so that other LAN devices can connect.
+- **Microphone / WebRTC Voice on HTTP Origins:** Chromium browsers restrict `getUserMedia` on non-localhost HTTP addresses. Either access via the desktop client (`client_gui.py`), or enable the Chromium developer flag: navigate to `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<LAN_IP>:8000`, and click Relaunch.
 
 ---
 
-### 4. Pixel-Exact Coordinates & Host-Moderated Cursor Governance
+## User Interface and Controls Overview
 
-- **Zero Cursor Drift / Lag Fix:**
-  - Canvas coordinates use `clientX - rect.left` and `clientY - rect.top` relative to `<canvas>` bounding rectangle, completely eliminating the vertical row offset previously caused by top navigation bars or viewport scaling.
-- **Clutter-Free Canvas Policy (10+ Participants):**
-  - Only the **Room Host's cursor** (`👑 Host`) is displayed by default to maintain a clean, uncluttered whiteboard.
-  - **Viewers (`VIEWER`)** never broadcast pointer coordinates, and their cursors are automatically removed if their role changes.
-  - **Participant Cursor Request:** Non-host participants have a **`[Share Pointer]`** button in the header. Clicking it sends a request to the Host.
-  - **Host Real-time Moderation:** The Host receives an interactive header notification pill (`"User wants to show cursor: [Allow] [Deny]"`).
-  - **Granular Toggles:** The Host can also toggle pointer visibility (`[ 🖱️ Pointer: On / Off ]`) for any participant at any time within the **Meeting & Controls** tab.
+### Top Header Navigation
+- **Brand Logo Popover:** Clicking the CollabBoard X logo on the far left reveals live connection health, active transport protocol (`WebSocket` or `Raw TCP`), current room ID with one-click copy link, server LAN address, role badge (`HOST`, `EDITOR`, `VIEWER`), and room master lock controls.
+- **Two-Tab Workspace Switcher:**
+  - **Whiteboard Tab:** Distraction-free canvas with floating inking toolbar, audio recording bar, page navigation, thumbnail drawer, and smooth zoom controls.
+  - **Controls Tab:** Participant roster, role assignment matrix (Host / Editor / Viewer), moderation controls (mute individual, mute all, kick), WebRTC voice mesh controls, and notebook version snapshots.
+- **Right Action Bar:**
+  - Real-time chat drawer toggle with unread message counter badge.
+  - Quick microphone mute/unmute toggle.
+  - User profile pill and disconnect action.
 
-### 5. Quick Header Controls
-- **Master Board Access Switch:** Prominent toggle button in the top header (`[ 🔓 Board: Open ]` / `[ 🔒 Board: Disabled ]`) allowing the Host to freeze/unfreeze drawing access instantly from any screen.
-- **Participant Pointer Request Button:** Non-host participants can request or stop cursor sharing (`[Share Pointer]`).
-- **Host Cursor Request Notification:** Interactive pill allowing the Host to accept or reject incoming cursor broadcast requests on the fly.
-- **Quick Voice Mic Toggle:** Mute/unmute microphone directly from the top header without leaving the Whiteboard tab.
-- **Quick Share & QR Modal:** One-click modal popup displaying the shareable LAN link and QR code from any screen.
-- **User Profile & Role Pill:** Real-time badge indicating current role (`👑 HOST`, `✏️ EDITOR`, or `👁️ VIEWER`).
+### Host Governance and Access Control
+- **Master Board Access Switch:** Host can toggle room drawing access (`[Board: Open]` / `[Board: Locked]`). When locked, non-host participants have drawing tools disabled and are restricted to read-only viewing and panning.
+- **Cursor Sharing Moderation:** By default, only the Host cursor is broadcast to prevent visual clutter in large rooms. Non-host participants can request cursor visibility via the `[Share Pointer]` button, which prompts the Host with interactive approval pills (`[Allow]` / `[Deny]`).
+- **Role Permissions:** Host can elevate participants from Viewer (read-only) to Editor (can draw and modify unlocked elements), or revoke permissions at any time.
 
 ---
 
 ## Automated Test Suites
 
-Run the complete test suite (**25 automated unit and integration tests**):
-```powershell
-py -3.13 -m pytest -v backend/tests
+The backend includes a comprehensive test suite of 25 automated unit and integration tests.
+
+Run the test suite from the repository root:
+```bash
+pytest -v backend/tests
 ```
 
-Test coverage includes:
+### Test Coverage Highlights
 - **`test_canvas_engine.py`**: ADD, UPDATE, TRANSFORM, DELETE, CLEAR mutations, multi-page page creation, locked element mutation rejection, and cascading page deletion.
-- **`test_framing.py`**: Length-prefixed 4-byte header encoding, streaming buffer fragmentation, and boundary recovery.
+- **`test_framing.py`**: 4-byte big-endian framing, streaming buffer fragmentation, and boundary recovery.
 - **`test_envelope.py`**: Message envelope serialization and Pydantic v2 validation.
-- **`test_event_bus.py`**: Event registration, dispatching, and filter pipeline.
+- **`test_event_bus.py`**: Event registration, dispatching, and pipeline filtering.
 - **`test_raw_tcp_socket.py`**: Explicit socket programming roundtrip test on port 9001.
-- **`test_websocket_gateway.py`**: FastAPI WebSocket handshake and ping-pong.
-- **`test_cross_protocol_broadcast.py`**: Mixed-mode broadcasting across WebSocket and Raw TCP sessions.
+- **`test_websocket_gateway.py`**: FastAPI WebSocket handshake, envelope routing, and ping-pong.
+- **`test_cross_protocol_broadcast.py`**: Unified broadcasting across WebSocket and Raw TCP sessions.
 - **`test_room_actor.py`**: Concurrent queue serialization (30 concurrent ops), deduplication, and gap replay.
 - **`test_canvas_module_integration.py`**: End-to-end multi-client room join, snapshot, and draw broadcast.
 - **`test_chat_presence.py`**: Real-time chat message persistence, history query, and ephemeral cursor broadcasting.
 - **`test_voice_signaling.py`**: WebRTC SDP Offer, Answer, and ICE candidate mesh routing.
 - **`test_host_controls.py`**: Room locking, user kicking, snapshot JSON export, and state restoration.
-- **	est_version_control.py**: Server-side notebook version control with 3-slot quota enforcement, conflict replacement, version listing, room-wide snapshot restoration, and version deletion.
+- **`test_version_control.py`**: Server-side notebook version control with 3-slot quota enforcement, conflict replacement, version listing, room-wide snapshot restoration, and version deletion.
 
 ---
 
-## Computer Networks Laboratory Demonstration
+## Diagnostic and Protocol Verification Tools
 
-### 1. Explicit Raw TCP Socket Client
-```powershell
-py -3.13 tools/lab_tcp_client.py --host 127.0.0.1 --port 9001 --room lab-demo
+CollabBoard X includes dedicated CLI diagnostic tools to test and verify network protocol compliance:
+
+### 1. Raw BSD TCP Socket Client
+A standalone CLI client communicating directly with the raw TCP engine on port 9001:
+```bash
+python tools/lab_tcp_client.py --host 127.0.0.1 --port 9001 --room test-room
 ```
 
-### 2. Network Impairment & Sequence Gap Recovery Verification
-```powershell
-py -3.13 tools/network_impairment_tester.py --host 127.0.0.1 --port 9001 --room fault-demo
+### 2. Network Impairment and Sequence Gap Recovery Tester
+Simulates hostile network conditions (random packet drops, latency jitter) to verify client gap detection and server resynchronization via `ROOM_REPLAY_REQ`:
+```bash
+python tools/network_impairment_tester.py --host 127.0.0.1 --port 9001 --room fault-test
 ```
-Simulates packet drop and proves the client detects missing sequence numbers and re-syncs state using `ROOM_REPLAY_REQ` from server SQLite storage.
 
-### 3. Wireshark Capture Instructions
-Refer to [docs/LAB_EXPERIMENT_GUIDE.md](file:///c:/Users/raman/Downloads/COLLAB/docs/LAB_EXPERIMENT_GUIDE.md) for full packet inspection steps.
+### 3. Protocol Specification
+For wire protocol packet structures, message types, and schema definitions, refer to [docs/PROTOCOL_SPEC.md](file:///c:/Users/raman/Downloads/COLLAB/docs/PROTOCOL_SPEC.md).
+
+---
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

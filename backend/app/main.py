@@ -98,7 +98,7 @@ async def transport_info() -> Dict[str, Any]:
                 "host": settings.HOST,
                 "port": settings.TCP_SOCKET_PORT,
                 "framing": "4-byte big-endian length prefix followed by UTF-8 JSON envelope",
-                "description": "Explicit socket interface for Computer Networks Laboratory requirements",
+                "description": "Explicit socket interface for native and CLI socket clients",
             },
         },
         "registered_events": context.event_bus.get_registered_event_types(),
